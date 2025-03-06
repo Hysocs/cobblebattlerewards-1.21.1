@@ -90,29 +90,72 @@ object CobbleBattleRewards : ModInitializer {
 			POKEMON_CAPTURED.subscribe { event ->
 				findBattleByPokemon(event.pokemon)?.let { battleId ->
 					battles[battleId]?.apply {
+						logDebug("========================================", MOD_ID)
+						logDebug("Pokémon captured in battle $battleId", MOD_ID)
+
+						// Update opponent Pokémon to be the captured one to ensure type matching works
+						if (opponentPokemon == null || opponentPokemon?.uuid != event.pokemon.uuid) {
+							opponentPokemon = event.pokemon
+							logDebug("Updated opponent Pokémon to captured: ${event.pokemon.species.name}", MOD_ID)
+
+							// Log the captured Pokémon details
+							val types = listOfNotNull(
+								event.pokemon.species.primaryType?.name,
+								event.pokemon.species.secondaryType?.name
+							)
+							logDebug("Captured Pokémon details:", MOD_ID)
+							logDebug("- Species: ${event.pokemon.species.name}", MOD_ID)
+							logDebug("- Types: ${types.joinToString(", ")}", MOD_ID)
+							logDebug("- Level: ${event.pokemon.level}", MOD_ID)
+						}
+
 						isCaptured = true
-						finalizeBattle(battleId, emptyList())
+
+						// Handle capture rewards immediately
+						val player = findPlayerFromBattle(this)
+						if (player != null) {
+							logDebug("Granting 'Captured' rewards to player: ${player.name.string}", MOD_ID)
+							determineAndProcessReward(player, this, battleType, "Captured")
+						} else {
+							logDebug("Could not find player for battle $battleId", MOD_ID)
+						}
+
+						// Mark battle as resolved
+						isResolved = true
+						logDebug("Finalizing $battleType Battle $battleId (Capture)", MOD_ID)
+						logDebug("========================================", MOD_ID)
 					}
 				}
 			}
 
 			BATTLE_VICTORY.subscribe { event ->
 				battles[event.battle.battleId]?.let { state ->
+					if (state.isCaptured) {
+						// Skip victory processing if the battle ended with a capture
+						logDebug("Skipping victory processing for battle ${event.battle.battleId} as it was a capture", MOD_ID)
+						return@subscribe
+					}
+
 					if (state.battleType == BattleType.PVP) {
-						val winningPlayerActors = event.winners.filter { it.type == ActorType.PLAYER } as List<PlayerBattleActor>
+						val winningPlayerActors =
+							event.winners.filter { it.type == ActorType.PLAYER } as List<PlayerBattleActor>
 						winningPlayerActors.forEach { actor ->
 							state.winningPlayers.add(actor.uuid)
 							logDebug("PVP battle winner registered: ${actor.uuid}", MOD_ID)
 						}
 					}
-					if (!state.isCaptured) {
-						finalizeBattle(event.battle.battleId, event.winners)
-					}
+
+					finalizeBattleVictory(event.battle.battleId, event.winners)
 				}
 			}
 
 			BATTLE_FLED.subscribe { event ->
 				battles[event.battle.battleId]?.let { state ->
+					if (state.isCaptured) {
+						// Skip fled processing if the battle ended with a capture
+						return@subscribe
+					}
+
 					if (state.battleType == BattleType.PVP) {
 						val fleeingPlayerUUID = event.player.uuid
 						state.actors.forEach { actor ->
@@ -128,7 +171,10 @@ object CobbleBattleRewards : ModInitializer {
 
 			BATTLE_FAINTED.subscribe { event ->
 				battles[event.battle.battleId]?.let { state ->
-					logDebug("Pokémon fainted in battle ${event.battle.battleId}: ${event.killed.effectedPokemon.species.name}", MOD_ID)
+					logDebug(
+						"Pokémon fainted in battle ${event.battle.battleId}: ${event.killed.effectedPokemon.species.name}",
+						MOD_ID
+					)
 				}
 			}
 		}
@@ -153,7 +199,10 @@ object CobbleBattleRewards : ModInitializer {
 	private fun handleItemUse(player: ServerPlayerEntity, hand: Hand): TypedActionResult<ItemStack> {
 		if (hand != Hand.MAIN_HAND) return TypedActionResult.pass(player.getStackInHand(hand))
 		val stack = player.getStackInHand(hand)
-		val trackerValue = stack.get(DataComponentTypes.CUSTOM_DATA)?.nbt?.getInt("trackerValue") ?: return TypedActionResult.pass(stack)
+		val trackerValue =
+			stack.get(DataComponentTypes.CUSTOM_DATA)?.nbt?.getInt("trackerValue") ?: return TypedActionResult.pass(
+				stack
+			)
 
 		findRewardByTracker(trackerValue)?.let { reward ->
 			if (reward.type.equals("redeemable", ignoreCase = true) && !reward.redeemCommand.isNullOrBlank()) {
@@ -173,8 +222,10 @@ object CobbleBattleRewards : ModInitializer {
 		if (currentTime - lastUsed < reward.cooldown * 1000) {
 			val remainingTime = ((reward.cooldown * 1000 - (currentTime - lastUsed)) / 1000).toInt()
 			player.sendMessage(
-				Text.literal(reward.cooldownActiveMessage?.replace("%time%", remainingTime.toString())
-					?: "Wait $remainingTime seconds before using this reward again."),
+				Text.literal(
+					reward.cooldownActiveMessage?.replace("%time%", remainingTime.toString())
+						?: "Wait $remainingTime seconds before using this reward again."
+				),
 				false
 			)
 			return false
@@ -231,10 +282,20 @@ object CobbleBattleRewards : ModInitializer {
 		}
 	}
 
-	private fun finalizeBattle(battleId: UUID, winners: List<BattleActor>) {
+	// Now we have separate methods for the different ways a battle can end
+
+	// This method handles battle victories (not captures)
+	private fun finalizeBattleVictory(battleId: UUID, winners: List<BattleActor>) {
 		battles[battleId]?.let { state ->
+			// Skip if this is a capture (should be handled by the capture event)
+			if (state.isCaptured) {
+				logDebug("Skipping victory rewards for $battleId as it was a capture", MOD_ID)
+				return
+			}
+
 			state.isResolved = true
 
+			// Track who forfeited (only meaningful in non-capture scenarios)
 			val losingActors = state.actors.filter { it !in winners }
 			state.forfeitingActors.addAll(
 				losingActors.filter { actor ->
@@ -251,10 +312,12 @@ object CobbleBattleRewards : ModInitializer {
 							logDebug("Granting 'BattleWon' rewards to player: ${player.name.string}", MOD_ID)
 							determineAndProcessReward(player, state, state.battleType, "BattleWon")
 						}
+
 						actor.uuid in state.forfeitingActors -> {
 							logDebug("Granting 'BattleForfeit' rewards to player: ${player.name.string}", MOD_ID)
 							determineAndProcessReward(player, state, state.battleType, "BattleForfeit")
 						}
+
 						else -> {
 							logDebug("Granting 'BattleLost' rewards to player: ${player.name.string}", MOD_ID)
 							determineAndProcessReward(player, state, state.battleType, "BattleLost")
@@ -263,16 +326,7 @@ object CobbleBattleRewards : ModInitializer {
 				}
 			}
 
-			// Handle capture rewards for WILD battles
-			if (state.battleType == BattleType.WILD && state.isCaptured) {
-				val player = findPlayerFromBattle(state)
-				if (player != null) {
-					logDebug("Granting 'Captured' rewards to player: ${player.name.string}", MOD_ID)
-					determineAndProcessReward(player, state, BattleType.WILD, "Captured")
-				}
-			}
-
-			logDebug("Finalizing ${state.battleType} Battle $battleId", MOD_ID)
+			logDebug("Finalizing ${state.battleType} Battle $battleId (Victory)", MOD_ID)
 		}
 	}
 
@@ -282,19 +336,52 @@ object CobbleBattleRewards : ModInitializer {
 		}
 	}
 
-	private fun determineAndProcessReward(player: ServerPlayerEntity, state: BattleState, battleType: BattleType, triggerCondition: String) {
+	private fun determineAndProcessReward(
+		player: ServerPlayerEntity,
+		state: BattleState,
+		battleType: BattleType,
+		triggerCondition: String
+	) {
 		val config = BattleRewardsConfigManager.config
 		val pokemonLevel = state.opponentPokemon?.level ?: 1
-		logDebug("Determining rewards for player ${player.name.string}, Pokémon level: $pokemonLevel, Battle type: $battleType, Trigger: $triggerCondition", MOD_ID)
+		val pokemonName = state.opponentPokemon?.species?.name ?: "Unknown"
+
+		logDebug(
+			"==== Determining rewards for player ${player.name.string} ====", MOD_ID
+		)
+		logDebug("Pokémon: $pokemonName, Level: $pokemonLevel, Battle type: $battleType, Trigger: $triggerCondition", MOD_ID)
+
+		// Log detailed information about the opponent Pokémon
+		state.opponentPokemon?.let { pokemon ->
+			val types = listOfNotNull(
+				pokemon.species.primaryType?.name,
+				pokemon.species.secondaryType?.name
+			)
+			logDebug("Opponent Pokémon details:", MOD_ID)
+			logDebug("- Species: ${pokemon.species.name}", MOD_ID)
+			logDebug("- Types: ${types.joinToString(", ")}", MOD_ID)
+			logDebug("- Level: ${pokemon.level}", MOD_ID)
+		}
 
 		val eligibleRewards = getEligibleRewards(state, battleType, triggerCondition, pokemonLevel)
-		eligibleRewards.firstOrNull()?.let { reward ->
-			logDebug("Granting reward ID: ${reward.id} to player ${player.name.string}", MOD_ID)
-			processReward(player, reward)
-		} ?: logDebug("No eligible rewards found for player ${player.name.string}", MOD_ID)
+
+		if (eligibleRewards.isNotEmpty()) {
+			eligibleRewards.forEach { reward ->
+				logDebug("Processing reward ID: ${reward.id} for player ${player.name.string}", MOD_ID)
+				val success = processReward(player, reward)
+				logDebug("Reward processing ${if (success) "succeeded" else "failed"}", MOD_ID)
+			}
+		} else {
+			logDebug("No eligible rewards found for player ${player.name.string}", MOD_ID)
+		}
 	}
 
-	private fun getEligibleRewards(state: BattleState, battleType: BattleType, triggerCondition: String, pokemonLevel: Int): List<Reward> {
+	private fun getEligibleRewards(
+		state: BattleState,
+		battleType: BattleType,
+		triggerCondition: String,
+		pokemonLevel: Int
+	): List<Reward> {
 		val config = BattleRewardsConfigManager.config
 		val opponentSpecies = state.opponentPokemon?.species?.name?.lowercase()
 		val opponentTypes = listOfNotNull(
@@ -302,20 +389,104 @@ object CobbleBattleRewards : ModInitializer {
 			state.opponentPokemon?.species?.secondaryType?.name?.lowercase()
 		)
 
-		return config.rewards.filter { reward ->
-			reward.battleTypes.contains(battleType.name.lowercase()) &&
-					reward.triggerConditions.contains(triggerCondition) &&
-					reward.scope.any { scope ->
-						when (scope.lowercase()) {
-							"global" -> true
-							"pokemon" -> opponentSpecies != null && reward.pokemonSpecies.contains(opponentSpecies)
-							"type" -> opponentTypes.any { it in reward.pokemonTypes }
-							else -> false
+		// Log the Pokémon information for debugging
+		logDebug("Reward eligibility check for: ${state.opponentPokemon?.species?.name ?: "Unknown Pokémon"}", MOD_ID)
+		logDebug("Pokémon types: ${opponentTypes.joinToString(", ")}", MOD_ID)
+		logDebug("Battle type: $battleType, Trigger: $triggerCondition, Level: $pokemonLevel", MOD_ID)
+
+		// First pass: Find all potentially eligible rewards based on conditions
+		val potentialRewards = config.rewards.filter { reward ->
+			// Check battle type match
+			val battleTypeMatch = reward.battleTypes.contains(battleType.name.lowercase())
+			if (!battleTypeMatch) {
+				logDebug("Reward ${reward.id} rejected: battle type ${battleType.name.lowercase()} not in ${reward.battleTypes}", MOD_ID)
+				return@filter false
+			}
+
+			// Check trigger condition match
+			val triggerMatch = reward.triggerConditions.contains(triggerCondition)
+			if (!triggerMatch) {
+				logDebug("Reward ${reward.id} rejected: trigger $triggerCondition not in ${reward.triggerConditions}", MOD_ID)
+				return@filter false
+			}
+
+			// Check scope match
+			val scopeMatch = reward.scope.any { scope ->
+				when (scope.lowercase()) {
+					"global" -> true
+					"pokemon" -> {
+						val matches = opponentSpecies != null && reward.pokemonSpecies.contains(opponentSpecies)
+						if (matches) {
+							logDebug("Reward ${reward.id} species match: $opponentSpecies in ${reward.pokemonSpecies}", MOD_ID)
 						}
-					} &&
-					pokemonLevel >= reward.minLevel && pokemonLevel <= reward.maxLevel &&
-					Random.nextDouble(100.0) < reward.chance
+						matches
+					}
+					"type" -> {
+						// Check if ANY of the Pokémon's types match ANY of the reward's required types
+						val typeIntersection = opponentTypes.intersect(reward.pokemonTypes.map { it.lowercase() }.toSet())
+						val matches = typeIntersection.isNotEmpty()
+						if (matches) {
+							logDebug("Reward ${reward.id} type match: found types ${typeIntersection.joinToString(", ")}", MOD_ID)
+						} else {
+							logDebug("Reward ${reward.id} type mismatch: Pokémon types $opponentTypes not in ${reward.pokemonTypes}", MOD_ID)
+						}
+						matches
+					}
+					else -> false
+				}
+			}
+			if (!scopeMatch) {
+				logDebug("Reward ${reward.id} rejected: scope match failed", MOD_ID)
+				return@filter false
+			}
+
+			// Check level range
+			val levelMatch = pokemonLevel >= reward.minLevel && pokemonLevel <= reward.maxLevel
+			if (!levelMatch) {
+				logDebug("Reward ${reward.id} rejected: level $pokemonLevel not in range ${reward.minLevel}-${reward.maxLevel}", MOD_ID)
+				return@filter false
+			}
+
+			// Apply chance
+			val randomValue = Random.nextDouble(100.0)
+			val chanceMatch = randomValue < reward.chance
+			if (!chanceMatch) {
+				logDebug("Reward ${reward.id} rejected: random roll $randomValue >= ${reward.chance}%", MOD_ID)
+			} else {
+				logDebug("Reward ${reward.id} passed chance check: $randomValue < ${reward.chance}%", MOD_ID)
+			}
+
+			battleTypeMatch && triggerMatch && scopeMatch && levelMatch && chanceMatch
 		}
+
+		// Sort potential rewards by exclusion count
+		// This prioritizes rewards that exclude more others (generally "better" rewards)
+		val sortedRewards = potentialRewards.sortedByDescending { it.excludesRewards.size }
+
+		// Second pass: Apply exclusion rules
+		val finalRewards = mutableListOf<Reward>()
+		val excludedIds = mutableSetOf<String>()
+
+		// Process rewards in order (rewards with more exclusions come first)
+		for (reward in sortedRewards) {
+			// Skip rewards that are excluded by already selected rewards
+			if (reward.id in excludedIds) {
+				logDebug("Reward ${reward.id} rejected: excluded by a higher priority reward", MOD_ID)
+				continue
+			}
+
+			// This reward is eligible, add it to the final list
+			finalRewards.add(reward)
+
+			// Add any rewards that this one excludes to the excluded set
+			excludedIds.addAll(reward.excludesRewards)
+			if (reward.excludesRewards.isNotEmpty()) {
+				logDebug("Reward ${reward.id} excludes: ${reward.excludesRewards.joinToString(", ")}", MOD_ID)
+			}
+		}
+
+		logDebug("Found ${finalRewards.size} eligible rewards: ${finalRewards.map { it.id }.joinToString(", ")}", MOD_ID)
+		return finalRewards
 	}
 
 	private fun createItemStack(item: Item): ItemStack {
@@ -331,9 +502,10 @@ object CobbleBattleRewards : ModInitializer {
 				putInt("trackerValue", item.trackerValue)
 			}))
 			if (item.lore.isNotEmpty()) {
-				set(DataComponentTypes.LORE, LoreComponent(
-					item.lore.map { Text.literal(it).formatted(Formatting.GRAY) }
-				))
+				set(
+					DataComponentTypes.LORE, LoreComponent(
+						item.lore.map { Text.literal(it).formatted(Formatting.GRAY) }
+					))
 			}
 		}
 	}
@@ -349,21 +521,29 @@ object CobbleBattleRewards : ModInitializer {
 						val owner = pokemon.entity?.owner
 						if (owner is NPCEntity && state.battleType != BattleType.PVP) {
 							state.battleType = BattleType.NPC
-							logDebug("Updated battle type to NPC based on Pokémon owner: ${owner.customName?.string ?: "Unnamed NPC"}", MOD_ID)
+							logDebug(
+								"Updated battle type to NPC based on Pokémon owner: ${owner.customName?.string ?: "Unnamed NPC"}",
+								MOD_ID
+							)
 						}
 					}
 				}
+
 				else -> state.actors.forEach { actor ->
 					when (actor) {
 						is PlayerBattleActor -> actor.pokemonList.firstOrNull()?.effectedPokemon?.let {
 							state.playerPokemon = it
 						}
+
 						else -> actor.pokemonList.firstOrNull()?.effectedPokemon?.let {
 							state.opponentPokemon = it
 							val owner = it.entity?.owner
 							if (owner is NPCEntity && state.battleType != BattleType.PVP) {
 								state.battleType = BattleType.NPC
-								logDebug("Updated battle type to NPC based on Pokémon owner: ${owner.customName?.string ?: "Unnamed NPC"}", MOD_ID)
+								logDebug(
+									"Updated battle type to NPC based on Pokémon owner: ${owner.customName?.string ?: "Unnamed NPC"}",
+									MOD_ID
+								)
 							}
 						}
 					}

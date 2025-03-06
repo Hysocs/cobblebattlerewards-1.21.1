@@ -28,6 +28,7 @@ data class Reward(
     var item: Item? = null,
     var cooldown: Long = 0L,
     var cooldownActiveMessage: String = "",
+    var excludesRewards: List<String> = listOf(), // List of reward IDs that should not trigger if this one does
     @SerializedName("triggerCondition")
     var triggerConditions: List<String> = listOf("BattleWon"), // e.g., ["Captured", "BattleWon", "BattleForfeit"]
     @SerializedName("TriggerTypes")
@@ -88,6 +89,10 @@ object BattleRewardsConfigManager {
             "- 'pokemon': Restricted to specific Pokémon species (defined in pokemonSpecies)",
             "- 'type': Restricted to Pokémon of specific types (defined in pokemonTypes)",
             "",
+            "REWARD EXCLUSIONS:",
+            "- 'excludesRewards': List of reward IDs that should not trigger if this reward triggers",
+            "  This allows you to create tiered rewards where better rewards prevent lesser ones from triggering",
+            "",
             "VARIABLES IN MESSAGES AND COMMANDS:",
             "- %player% : Will be replaced with the player's name",
             "- %time% : In cooldown messages, will be replaced with remaining cooldown time",
@@ -109,14 +114,15 @@ object BattleRewardsConfigManager {
             "configId" to "DO NOT EDIT - Unique identifier for this config file",
             "debugEnabled" to "Set to true for detailed logging (helps troubleshooting)",
             "inventoryFullBehavior" to "What happens when a player's inventory is full: 'drop' or 'skip'",
-            "rewards" to "List of all rewards with their conditions and properties"
+            "rewards" to "List of all rewards with their conditions and properties",
+            "excludesRewards" to "List of reward IDs that should not trigger if this reward triggers"
         ),
         footerComments = listOf(
             "===========================================",
             " End of CobbleBattleRewards Configuration",
             "===========================================",
             "",
-            "For help and support: [Your contact information]"
+            "For help and support: [https://discord.gg/nrENPTmQKt]"
         ),
         includeTimestamp = true,
         includeVersion = true
@@ -191,163 +197,56 @@ object BattleRewardsConfigManager {
         version = CURRENT_VERSION,
         debugEnabled = true,
         rewards = listOf(
-            // Wild Pokemon Battle Currency Rewards (Various Chance Rates)
+            // Tiered rewards for winning battles - showing reward exclusions
             Reward(
                 type = "command",
-                id = "wild_dollars_common",
-                message = "You received §a$25§r for winning the battle!",
-                command = "eco deposit 25 dollars %player%",
-                chance = 50.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("wild"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-            Reward(
-                type = "command",
-                id = "wild_dollars_uncommon",
-                message = "You received §a$50§r for winning the battle!",
-                command = "eco deposit 50 dollars %player%",
+                id = "rare_battle_win",
+                message = "You received §a$100§r for winning! §6(Rare Reward)§r",
+                command = "eco deposit 100 dollars %player%",
                 chance = 25.0,
                 cooldown = 0,
+                // This reward excludes the uncommon and common rewards
+                excludesRewards = listOf("uncommon_battle_win", "basic_battle_win"),
                 triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("wild"),
+                battleTypes = listOf("wild", "npc", "pvp"),
                 scope = listOf("global"),
                 minLevel = 1,
                 maxLevel = 100
             ),
             Reward(
                 type = "command",
-                id = "wild_dollars_rare",
-                message = "You received §a$100§r for winning the battle!",
-                command = "eco deposit 100 dollars %player%",
-                chance = 10.0,
+                id = "uncommon_battle_win",
+                message = "You received §a$50§r for winning! §e(Uncommon Reward)§r",
+                command = "eco deposit 50 dollars %player%",
+                chance = 50.0,
                 cooldown = 0,
+                // This reward only excludes the basic reward
+                excludesRewards = listOf("basic_battle_win"),
                 triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("wild"),
+                battleTypes = listOf("wild", "npc", "pvp"),
+                scope = listOf("global"),
+                minLevel = 1,
+                maxLevel = 100
+            ),
+            Reward(
+                type = "command",
+                id = "basic_battle_win",
+                message = "You received §a$25§r for winning!",
+                command = "eco deposit 25 dollars %player%",
+                chance = 100.0,
+                cooldown = 0,
+                // This is the fallback reward with no exclusions
+                triggerConditions = listOf("BattleWon"),
+                battleTypes = listOf("wild", "npc", "pvp"),
                 scope = listOf("global"),
                 minLevel = 1,
                 maxLevel = 100
             ),
 
-            // Battle Points for Wild Battle
+            // Reward for capturing a Pokémon
             Reward(
                 type = "command",
-                id = "wild_battle_points",
-                message = "You earned §b5 Battle Points§r!",
-                command = "eco deposit 5 battlepoints %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("wild"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-
-            // Extra reward for higher level Pokémon
-            Reward(
-                type = "command",
-                id = "wild_high_level_bonus",
-                message = "You received a §6High Level Bonus§r of §a$75§r!",
-                command = "eco deposit 75 dollars %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("wild"),
-                scope = listOf("global"),
-                minLevel = 50,
-                maxLevel = 100
-            ),
-
-            // NPC Trainer Battle Rewards
-            Reward(
-                type = "command",
-                id = "npc_dollars_reward",
-                message = "You received §a$100§r for defeating the trainer!",
-                command = "eco deposit 100 dollars %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("npc"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-            Reward(
-                type = "command",
-                id = "npc_battle_points",
-                message = "You earned §b15 Battle Points§r from the trainer battle!",
-                command = "eco deposit 15 battlepoints %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("npc"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-            Reward(
-                type = "command",
-                id = "npc_trainer_tokens",
-                message = "You received §d10 Trainer Tokens§r!",
-                command = "eco deposit 10 trainertokens %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("npc"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-
-            // PVP Battle Rewards
-            Reward(
-                type = "command",
-                id = "pvp_dollars_reward",
-                message = "You received §a$150§r for winning the PVP battle!",
-                command = "eco deposit 150 dollars %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("pvp"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-            Reward(
-                type = "command",
-                id = "pvp_battle_points",
-                message = "You earned §b25 Battle Points§r from the PVP battle!",
-                command = "eco deposit 25 battlepoints %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("pvp"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-            Reward(
-                type = "command",
-                id = "pvp_tokens",
-                message = "You received §d15 PVP Tokens§r!",
-                command = "eco deposit 15 pvptokens %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("pvp"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
-
-            // Capture Rewards
-            Reward(
-                type = "command",
-                id = "capture_bonus_dollars",
+                id = "capture_reward",
                 message = "You received §a$50§r for capturing a Pokémon!",
                 command = "eco deposit 50 dollars %player%",
                 chance = 100.0,
@@ -358,148 +257,66 @@ object BattleRewardsConfigManager {
                 minLevel = 1,
                 maxLevel = 100
             ),
-            Reward(
-                type = "command",
-                id = "capture_bonus_points",
-                message = "You earned §b10 Capture Points§r!",
-                command = "eco deposit 10 capturepoints %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("Captured"),
-                battleTypes = listOf("wild"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
 
-            // Bonus for capturing rare types
+            // Bonus for Ghost-type Pokémon (works for both capture and battle)
             Reward(
                 type = "command",
-                id = "capture_rare_type_bonus",
-                message = "You received a §6Rare Type Bonus§r of §a$150§r!",
-                command = "eco deposit 150 dollars %player%",
+                id = "ghost_type_bonus",
+                message = "You received a §6Ghost Type Bonus§r of §a$100§r!",
+                command = "eco deposit 100 dollars %player%",
                 chance = 100.0,
                 cooldown = 0,
-                triggerConditions = listOf("Captured"),
+                triggerConditions = listOf("Captured", "BattleWon"),
                 battleTypes = listOf("wild"),
                 scope = listOf("type"),
-                pokemonTypes = listOf("dragon", "ghost", "fairy"),
+                pokemonTypes = listOf("ghost"),
                 minLevel = 1,
                 maxLevel = 100
             ),
 
-            // Forfeit consolation rewards
-            Reward(
-                type = "command",
-                id = "forfeit_consolation_dollars",
-                message = "You received §a$10§r as a consolation for forfeiting!",
-                command = "eco deposit 10 dollars %player%",
-                chance = 100.0,
-                cooldown = 0,
-                triggerConditions = listOf("BattleForfeit"),
-                battleTypes = listOf("wild", "npc", "pvp"),
-                scope = listOf("global"),
-                minLevel = 1,
-                maxLevel = 100
-            ),
+            // Item reward - gives Poké Balls
             Reward(
                 type = "item",
-                id = "forfeit_potion",
-                message = "You received a Consolation Potion for forfeiting!",
-                chance = 50.0,
-                item = Item(
-                    id = "minecraft:potion",
-                    count = 1,
-                    customName = "Consolation Potion",
-                    lore = listOf("A small reward for your effort"),
-                    trackerValue = 5678
-                ),
-                cooldown = 300,
-                cooldownActiveMessage = "You need to wait %time% seconds before receiving another Consolation Potion.",
-                triggerConditions = listOf("BattleForfeit"),
-                battleTypes = listOf("wild", "npc", "pvp"),
-                scope = listOf("global")
-            ),
-
-            // Example of a special redeemable item for Pikachu
-            Reward(
-                type = "redeemable",
-                id = "pikachu_thunderstone",
-                message = "You captured a Pikachu and received a Thunderstone!",
-                redeemCommand = "give %player% minecraft:nether_star 1",
-                redeemMessage = "You've redeemed your Thunderstone!",
+                id = "pokeball_reward",
+                message = "You received 3 Poké Balls!",
                 chance = 100.0,
-                item = Item(
-                    id = "cobblemon:thunder_stone",
-                    count = 1,
-                    customName = "Special Thunderstone",
-                    lore = listOf("Right-click to redeem", "A reward for capturing Pikachu!"),
-                    trackerValue = 5553
-                ),
-                cooldown = 86400,
-                cooldownActiveMessage = "You can only redeem one Thunder Stone per day. Please wait %time% seconds.",
-                triggerConditions = listOf("Captured"),
-                battleTypes = listOf("wild"),
-                scope = listOf("pokemon"),
-                pokemonSpecies = listOf("pikachu")
-            ),
-
-            // Example of a tiered item reward by level
-            Reward(
-                type = "item",
-                id = "tier1_reward_pokeball",
-                message = "You received 5 Poké Balls for winning!",
-                chance = 80.0,
                 item = Item(
                     id = "cobblemon:poke_ball",
-                    count = 5,
+                    count = 3,
                     customName = "Battle Reward Poké Ball",
-                    lore = listOf("A basic reward"),
+                    lore = listOf("A reward for your battle"),
                     trackerValue = 1001
                 ),
-                cooldown = 300,
+                cooldown = 0,
                 triggerConditions = listOf("BattleWon"),
                 battleTypes = listOf("wild"),
                 scope = listOf("global"),
                 minLevel = 1,
-                maxLevel = 30
+                maxLevel = 100
             ),
+
+            // Species-specific redeemable reward for Pikachu
             Reward(
-                type = "item",
-                id = "tier2_reward_greatball",
-                message = "You received 3 Great Balls for winning!",
-                chance = 60.0,
+                type = "redeemable",
+                id = "pikachu_reward",
+                message = "You found a §ePikachu Reward Ticket§r!",
+                redeemCommand = "give %player% minecraft:gold_ingot 3",
+                redeemMessage = "You've redeemed your Pikachu Reward Ticket!",
+                chance = 100.0,
                 item = Item(
-                    id = "cobblemon:great_ball",
-                    count = 3,
-                    customName = "Battle Reward Great Ball",
-                    lore = listOf("An intermediate reward"),
-                    trackerValue = 1002
-                ),
-                cooldown = 600,
-                triggerConditions = listOf("BattleWon"),
-                battleTypes = listOf("wild"),
-                scope = listOf("global"),
-                minLevel = 31,
-                maxLevel = 60
-            ),
-            Reward(
-                type = "item",
-                id = "tier3_reward_ultraball",
-                message = "You received an Ultra Ball for winning!",
-                chance = 40.0,
-                item = Item(
-                    id = "cobblemon:ultra_ball",
+                    id = "minecraft:paper",
                     count = 1,
-                    customName = "Battle Reward Ultra Ball",
-                    lore = listOf("An advanced reward"),
-                    trackerValue = 1003
+                    customName = "Pikachu Reward Ticket",
+                    lore = listOf("Right-click to redeem", "A special reward for Pikachu battles!"),
+                    trackerValue = 2001
                 ),
-                cooldown = 900,
-                triggerConditions = listOf("BattleWon"),
+                cooldown = 300,
+                cooldownActiveMessage = "You need to wait %time% seconds before receiving another ticket.",
+                triggerConditions = listOf("BattleWon", "Captured"),
                 battleTypes = listOf("wild"),
-                scope = listOf("global"),
-                minLevel = 61,
+                scope = listOf("pokemon"),
+                pokemonSpecies = listOf("pikachu"),
+                minLevel = 1,
                 maxLevel = 100
             )
         )
