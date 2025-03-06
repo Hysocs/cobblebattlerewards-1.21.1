@@ -1,0 +1,53 @@
+{
+	"schemaVersion": 1,
+	"id": "cobblebattlerewards",
+	"version": "${version}",
+	"name": "CobbleBattleRewards",
+	"description": "cbr is a Minecraft Fabric mod that offers customizable rewards for cobblemon",
+	"authors": [
+		"Hysocs"
+	],
+	"contact": {
+		"discord": "https://discord.gg/nrENPTmQKt"
+	},
+	"license": "GNU Lesser General Public License v3",
+	"icon": "assets/cobblebattlerewards/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			{
+				"value": "com.cobblebattlerewards.CobbleBattleRewards",
+				"adapter": "kotlin"
+			}
+		],
+		"client": [
+			{
+				"value": "com.cobblebattlerewards.CobbleBattleRewardsClient",
+				"adapter": "kotlin"
+			}
+		],
+		"fabric-datagen": [
+			{
+				"value": "com.cobblebattlerewards.CobbleBattleRewardsDataGenerator",
+				"adapter": "kotlin"
+			}
+		]
+	},
+	"mixins": [
+		"cobblebattlerewards.mixins.json",
+		{
+			"config": "cobblebattlerewards.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.15.0",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*",
+		"fabric-language-kotlin": "*"
+	},
+	"suggests": {
+		"another-mod": "*"
+	}
+}
