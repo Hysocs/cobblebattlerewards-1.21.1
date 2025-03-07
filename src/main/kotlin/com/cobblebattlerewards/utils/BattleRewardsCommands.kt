@@ -1,6 +1,6 @@
 package com.cobblebattlerewards.utils
 
-import com.blanketutils.command.CommandManager
+import com.everlastingutils.command.CommandManager
 import net.minecraft.server.command.ServerCommandSource
 import com.mojang.brigadier.context.CommandContext
 import net.minecraft.text.Text

@@ -1,7 +1,7 @@
 package com.cobblebattlerewards
 
 import com.cobblebattlerewards.utils.*
-import com.blanketutils.utils.logDebug
+import com.everlastingutils.utils.logDebug
 import com.cobblemon.mod.common.api.battles.model.actor.BattleActor
 import com.cobblemon.mod.common.api.battles.model.actor.ActorType
 import com.cobblemon.mod.common.api.events.CobblemonEvents

@@ -1,10 +1,10 @@
 package com.cobblebattlerewards.utils
 
-import com.blanketutils.config.ConfigData
-import com.blanketutils.config.ConfigManager
-import com.blanketutils.config.ConfigMetadata
-import com.blanketutils.utils.LogDebug
-import com.blanketutils.utils.logDebug
+import com.everlastingutils.config.ConfigData
+import com.everlastingutils.config.ConfigManager
+import com.everlastingutils.config.ConfigMetadata
+import com.everlastingutils.utils.LogDebug
+import com.everlastingutils.utils.logDebug
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory

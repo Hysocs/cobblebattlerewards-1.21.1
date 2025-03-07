@@ -87,12 +87,13 @@ dependencies {
 	//modImplementation("com.cobblemon:fabric:${property("cobblemon_version")}")
 	modImplementation "com.cobblemon:fabric:1.6.1+1.21.1"
 
-	// Fabric API. This is technically optional, but you probably want it anyway.
+	// Fabric API. This is technically optional
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 	modImplementation "net.fabricmc:fabric-language-kotlin:${project.fabric_kotlin_version}"
+	modImplementation('me.lucko:fabric-permissions-api:0.2-SNAPSHOT')
+	modImplementation("curse.maven:cyber-permissions-407695:4640544")
 
-
-	modCompileOnly(files("libs/blanketutils-1.0.2.jar"))
+	modCompileOnly(files("libs/everlastingutils-1.0.4.jar"))
 }
 
 processResources {
