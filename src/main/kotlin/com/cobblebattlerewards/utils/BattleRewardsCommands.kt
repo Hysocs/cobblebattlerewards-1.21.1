@@ -70,50 +70,31 @@ object BattleRewardsCommands {
         val messageBuilder = StringBuilder()
         messageBuilder.append("§6§lCobblemon Battle Rewards§r\n\n")
 
-        // Group rewards by scope
-        val globalRewards = config.rewards.filter { "global" in it.scope }
-        val pokemonRewards = config.rewards.filter { "pokemon" in it.scope }
-        val typeRewards = config.rewards.filter { "type" in it.scope }
-
-        // Global Rewards
-        messageBuilder.append("§6§lGlobal Rewards:§r\n")
-        if (globalRewards.isEmpty()) {
-            messageBuilder.append("  §7No global rewards configured§r\n")
-        } else {
-            globalRewards.forEach { reward ->
-                messageBuilder.append("  §7- ${reward.id}: ${reward.message} (${reward.chance}% chance)§r\n")
-            }
-        }
-        messageBuilder.append("\n")
-
-        // Pokémon Rewards
-        messageBuilder.append("§6§lPokémon Rewards:§r\n")
-        if (pokemonRewards.isEmpty()) {
-            messageBuilder.append("  §7No Pokémon-specific rewards configured§r\n")
-        } else {
-            val pokemonMap = pokemonRewards.groupBy { it.pokemonSpecies.joinToString(", ") }
-            pokemonMap.forEach { (species, rewards) ->
-                messageBuilder.append("§e§lPokémon $species:§r\n")
-                rewards.forEach { reward ->
-                    messageBuilder.append("  §7- ${reward.id}: ${reward.message} (${reward.chance}% chance)§r\n")
+        // Helper function to format rewards from a map
+        fun formatRewards(rewards: Map<String, Reward>, category: String) {
+            messageBuilder.append("§6§l$category:§r\n")
+            if (rewards.isEmpty()) {
+                messageBuilder.append("  §7No rewards configured§r\n")
+            } else {
+                rewards.forEach { (name, reward) ->
+                    messageBuilder.append("  §7- $name: Type: ${reward.type}, Message: ${reward.message}, Chance: ${reward.chance}%§r\n")
+                    if (reward.battleTypes.isNotEmpty()) {
+                        messageBuilder.append("    Battle Types: ${reward.battleTypes.joinToString(", ")}§r\n")
+                    }
+                    if (reward.conditions.isNotEmpty()) {
+                        messageBuilder.append("    Conditions: ${reward.conditions.joinToString(", ")}§r\n")
+                    }
+                    messageBuilder.append("    Level Range: ${reward.minLevel}-${reward.maxLevel}§r\n")
                 }
             }
+            messageBuilder.append("\n")
         }
-        messageBuilder.append("\n")
 
-        // Type Group Rewards
-        messageBuilder.append("§6§lType Group Rewards:§r\n")
-        if (typeRewards.isEmpty()) {
-            messageBuilder.append("  §7No type-based rewards configured§r\n")
-        } else {
-            val typeMap = typeRewards.groupBy { it.pokemonTypes.joinToString(", ") }
-            typeMap.forEach { (types, rewards) ->
-                messageBuilder.append("§e§lType $types:§r\n")
-                rewards.forEach { reward ->
-                    messageBuilder.append("  §7- ${reward.id}: ${reward.message} (${reward.chance}% chance)§r\n")
-                }
-            }
-        }
+        // List rewards by category
+        formatRewards(config.battleWonRewards, "Battle Won Rewards")
+        formatRewards(config.battleLostRewards, "Battle Lost Rewards")
+        formatRewards(config.battleForfeitRewards, "Battle Forfeit Rewards")
+        formatRewards(config.captureRewards, "Capture Rewards")
 
         source.sendFeedback({ Text.literal(messageBuilder.toString()) }, false)
         BattleRewardsConfigManager.logDebug("Listed rewards.")

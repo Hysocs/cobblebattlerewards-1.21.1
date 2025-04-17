@@ -93,7 +93,7 @@ dependencies {
 	modImplementation('me.lucko:fabric-permissions-api:0.2-SNAPSHOT')
 	modImplementation("curse.maven:cyber-permissions-407695:4640544")
 
-	modCompileOnly(files("libs/everlastingutils-1.0.4.jar"))
+	modCompileOnly(files("libs/everlastingutils-1.0.5.jar"))
 }
 
 processResources {
