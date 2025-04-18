@@ -39,7 +39,7 @@ object CobbleBattleRewards : ModInitializer {
 	private val scheduler = Executors.newSingleThreadScheduledExecutor()
 	private val GSON = Gson()
 
-	// timeout for inactivity: 30 minutes
+	// Timeout for inactivity: 30 minutes
 	private val BATTLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30)
 
 	enum class BattleType { WILD, NPC, PVP }
@@ -56,7 +56,7 @@ object CobbleBattleRewards : ModInitializer {
 		var battleType: BattleType = BattleType.WILD,
 		var winningPlayers: MutableList<UUID> = Collections.synchronizedList(mutableListOf()),
 		var forfeitingActors: MutableList<UUID> = Collections.synchronizedList(mutableListOf()),
-		// track last activity for timeout
+		// Track last activity for timeout
 		var lastActivity: Long = System.currentTimeMillis()
 	)
 
@@ -343,18 +343,54 @@ object CobbleBattleRewards : ModInitializer {
 		battles[battleId]?.let { state ->
 			if (state.isCaptured) return
 			state.isResolved = true
-			state.actors.filterIsInstance<PlayerBattleActor>().forEach { actor ->
-				val player = actor.pokemonList.firstOrNull()?.effectedPokemon?.getOwnerPlayer()
-						as? ServerPlayerEntity ?: return@forEach
-				if (actor in winners) {
-					logDebug("Granting 'BattleWon' to ${player.name.string}", MOD_ID)
-					determineAndProcessReward(player, state, state.battleType, "BattleWon")
+
+			val playerActors = state.actors.filterIsInstance<PlayerBattleActor>()
+			val winnerIds = winners.map { it.uuid }.toSet()
+
+			// Process Winners
+			playerActors.filter { it.uuid in winnerIds }.forEach { winnerActor ->
+				val player = winnerActor.pokemonList.firstOrNull()?.effectedPokemon
+					?.getOwnerPlayer() as? ServerPlayerEntity ?: return@forEach
+				val loserPoke = playerActors
+					.firstOrNull { it.uuid !in winnerIds }
+					?.pokemonList
+					?.firstOrNull()
+					?.effectedPokemon
+				if (loserPoke != null) {
+					state.opponentPokemon = loserPoke
+					state.opponentProperties = createDynamicProperties(loserPoke)
+				}
+				logDebug("Granting 'BattleWon' to ${player.name.string}", MOD_ID)
+				determineAndProcessReward(player, state, state.battleType, "BattleWon")
+			}
+
+			// Process Non-Winners (Losers or Forfeiters)
+			playerActors.filter { it.uuid !in winnerIds }.forEach { actor ->
+				val player = actor.pokemonList.firstOrNull()?.effectedPokemon
+					?.getOwnerPlayer() as? ServerPlayerEntity ?: return@forEach
+				val winnerPoke = playerActors
+					.firstOrNull { it.uuid in winnerIds }
+					?.pokemonList
+					?.firstOrNull()
+					?.effectedPokemon
+				if (winnerPoke != null) {
+					state.opponentPokemon = winnerPoke
+					state.opponentProperties = createDynamicProperties(winnerPoke)
+				}
+
+				// Check if the player has any Pokémon with health > 0
+				val hasHealthyPokemon = actor.pokemonList.any { it.effectedPokemon.currentHealth > 0 }
+				if (hasHealthyPokemon) {
+					logDebug("Granting 'BattleForfeit' to ${player.name.string}", MOD_ID)
+					determineAndProcessReward(player, state, state.battleType, "BattleForfeit")
 				} else {
 					logDebug("Granting 'BattleLost' to ${player.name.string}", MOD_ID)
 					determineAndProcessReward(player, state, state.battleType, "BattleLost")
 				}
 			}
+
 			logDebug("Finalized ${state.battleType} Battle $battleId", MOD_ID)
+			battles.remove(battleId)
 		}
 	}
 
@@ -418,7 +454,7 @@ object CobbleBattleRewards : ModInitializer {
 		return properties
 	}
 
-	// ★ Corrected deserializeItemStack ★
+	// Corrected deserializeItemStack
 	private fun deserializeItemStack(jsonString: String, ops: DynamicOps<JsonElement>): ItemStack {
 		return try {
 			val elem = GSON.fromJson(jsonString, JsonElement::class.java)
@@ -433,9 +469,7 @@ object CobbleBattleRewards : ModInitializer {
 		}
 	}
 
-
-
-	// ★ Cleans up resolved or stale (>30m) battles ★
+	// Cleans up resolved or stale (>30m) battles
 	private fun cleanupBattles() {
 		val now = System.currentTimeMillis()
 		battles.entries.removeIf { (_, state) ->
