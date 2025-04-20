@@ -87,23 +87,37 @@ object CobbleBattleRewards : ModInitializer {
 		if (properties == null) return false
 		if (reward.conditions.isEmpty()) return true
 
-		val (_, fullPropsString) = toPropertyMap(properties)
-		val lowerFullProps = fullPropsString.lowercase()
+		// Build a single lowercase string of all properties
+		val fullProps = toPropertyMap(properties).second.lowercase()
 
-		for (rawCond in reward.conditions) {
+		// Group raw conditions by their key (the part before ":" or "=")
+		val grouped = reward.conditions.groupBy { rawCond ->
 			val cond = rawCond.lowercase().trim()
-			val pattern = when {
-				cond.startsWith(":") || cond.startsWith("=") -> cond.substring(1)
-				":" in cond -> cond.substring(cond.indexOf(":") + 1)
-				"=" in cond -> cond.substring(cond.indexOf("=") + 1)
-				else -> cond
+			when {
+				":" in cond -> cond.substringBefore(":")
+				"=" in cond -> cond.substringBefore("=")
+				else        -> cond
 			}
-
-			if (!lowerFullProps.contains(pattern)) return false
 		}
 
+		// For each group (e.g. "species" → [caterpie, yanma, yanmega]),
+		// require that *at least one* of its values matches.
+		for ((_, conds) in grouped) {
+			val anyMatch = conds.any { rawCond ->
+				val cond = rawCond.lowercase().trim()
+				val pattern = when {
+					cond.startsWith(":") || cond.startsWith("=") -> cond.substring(1)
+					":" in cond   -> cond.substringAfter(":")
+					"=" in cond   -> cond.substringAfter("=")
+					else          -> cond
+				}
+				fullProps.contains(pattern)
+			}
+			if (!anyMatch) return false
+		}
 		return true
 	}
+
 
 	private fun setupEventHandlers() {
 		CobblemonEvents.apply {
