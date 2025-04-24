@@ -76,48 +76,13 @@ object CobbleBattleRewards : ModInitializer {
 		player.sendMessage(formatted, false)
 	}
 
-	private fun parseCondition(condition: String): PokemonProperties =
-		PokemonProperties.parse(
-			if (condition.contains(":")) condition else "type:$condition",
-			" ",
-			"="
-		)
-
-	private fun rewardApplies(reward: Reward, properties: PokemonProperties?): Boolean {
-		if (properties == null) return false
+	private fun rewardApplies(reward: Reward, pokemon: Pokemon?): Boolean {
+		if (pokemon == null) return false
 		if (reward.conditions.isEmpty()) return true
-
-		// Build a single lowercase string of all properties
-		val fullProps = toPropertyMap(properties).second.lowercase()
-
-		// Group raw conditions by their key (the part before ":" or "=")
-		val grouped = reward.conditions.groupBy { rawCond ->
-			val cond = rawCond.lowercase().trim()
-			when {
-				":" in cond -> cond.substringBefore(":")
-				"=" in cond -> cond.substringBefore("=")
-				else        -> cond
-			}
-		}
-
-		// For each group (e.g. "species" → [caterpie, yanma, yanmega]),
-		// require that *at least one* of its values matches.
-		for ((_, conds) in grouped) {
-			val anyMatch = conds.any { rawCond ->
-				val cond = rawCond.lowercase().trim()
-				val pattern = when {
-					cond.startsWith(":") || cond.startsWith("=") -> cond.substring(1)
-					":" in cond   -> cond.substringAfter(":")
-					"=" in cond   -> cond.substringAfter("=")
-					else          -> cond
-				}
-				fullProps.contains(pattern)
-			}
-			if (!anyMatch) return false
-		}
-		return true
+		val speciesConditions = reward.conditions.map { it.substringAfter("cobblemon:").lowercase() }
+		val pokemonSpecies = pokemon.species.name.lowercase()
+		return pokemonSpecies in speciesConditions
 	}
-
 
 	private fun setupEventHandlers() {
 		CobblemonEvents.apply {
@@ -236,14 +201,15 @@ object CobbleBattleRewards : ModInitializer {
 			logDebug("Props snapshot: $fullProps", MOD_ID)
 		}
 
-		getEligibleReward(state, battleType, trigger, state.opponentPokemon?.level ?: 1)
-			?.also { reward ->
-				logDebug("Processing reward → type=${reward.type}, message='${reward.message}'", MOD_ID)
-			}
-			?.let { reward ->
-				processReward(player, reward, state, trigger)
-			}
-			?: logDebug("No rewards eligible for ${player.name.string}", MOD_ID)
+		val rewards = getEligibleRewards(state, battleType, trigger, state.opponentPokemon?.level ?: 1)
+		if (rewards.isEmpty()) {
+			logDebug("No rewards eligible for ${player.name.string}", MOD_ID)
+			return
+		}
+		rewards.forEach { reward ->
+			logDebug("Processing reward → type=${reward.type}, message='${reward.message}'", MOD_ID)
+			processReward(player, reward, state, trigger)
+		}
 	}
 
 	private fun processReward(
@@ -342,7 +308,7 @@ object CobbleBattleRewards : ModInitializer {
 		trigger: String
 	): String {
 		var result = text
-		result = result.replace("%player%", player.name.string)
+		result = result.replace("% Slate", player.name.string)
 		result = result.replace("%pokemon%", state.opponentPokemon?.species?.name?.toString() ?: "")
 		result = result.replace("%level%", state.opponentPokemon?.level?.toString() ?: "")
 		result = result.replace("%battleType%", state.battleType.name.lowercase())
@@ -415,12 +381,12 @@ object CobbleBattleRewards : ModInitializer {
 			?.effectedPokemon
 			?.getOwnerPlayer() as? ServerPlayerEntity
 
-	private fun getEligibleReward(
+	private fun getEligibleRewards(
 		state: BattleState,
 		battleType: BattleType,
 		trigger: String,
 		lvl: Int
-	): Reward? {
+	): List<Reward> {
 		val cfg = BattleRewardsConfigManager.config
 		val map = when (trigger) {
 			"BattleWon"     -> cfg.battleWonRewards
@@ -429,14 +395,24 @@ object CobbleBattleRewards : ModInitializer {
 			"Captured"      -> cfg.captureRewards
 			else            -> emptyMap()
 		}
-		return map.values
-			.sortedBy { it.order }
-			.firstOrNull { r ->
-				r.battleTypes.contains(battleType.name.lowercase()) &&
-						rewardApplies(r, state.opponentProperties) &&
-						lvl in r.minLevel..r.maxLevel &&
-						Random.nextDouble(100.0) < r.chance
-			}
+
+		// Filter rewards that match battle type, conditions, and level range
+		val matchingRewards = map.values.filter { r ->
+			r.battleTypes.contains(battleType.name.lowercase()) &&
+					rewardApplies(r, state.opponentPokemon) &&
+					lvl in r.minLevel..r.maxLevel
+		}
+
+		if (matchingRewards.isEmpty()) return emptyList()
+
+		// Find the minimum order among matching rewards
+		val minOrder = matchingRewards.minOf { it.order }
+
+		// Get all rewards with that minimum order
+		val minOrderRewards = matchingRewards.filter { it.order == minOrder }
+
+		// For each of these, check the chance and collect those that pass
+		return minOrderRewards.filter { Random.nextDouble(100.0) < it.chance }
 	}
 
 	private fun toPropertyMap(properties: PokemonProperties): Pair<Map<String, String>, String> {
