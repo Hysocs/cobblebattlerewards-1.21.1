@@ -10,7 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 
 data class BattleRewardsConfig(
-    override val version: String = "2.0.0",
+    override val version: String = "2.0.1",
     override val configId: String = "cobblebattlerewards",
     var debugEnabled: Boolean = true,
     var inventoryFullBehavior: String = "drop", // "drop" or "skip"
@@ -43,7 +43,7 @@ data class Reward(
 object BattleRewardsConfigManager {
     private val logger = LoggerFactory.getLogger("cobblebattlerewards")
     private const val MOD_ID = "cobblebattlerewards"
-    private const val CURRENT_VERSION = "2.0.0"
+    private const val CURRENT_VERSION = "2.0.1"
     private lateinit var configManager: ConfigManager<BattleRewardsConfig>
     private var isInitialized = false
 
@@ -76,7 +76,7 @@ object BattleRewardsConfigManager {
             "",
             "REWARD FILTERS:",
             "- 'conditions': Restrict to Pokémon with specific conditions (empty = all)",
-            "  Conditions are tags like 'species:pikachu', 'type:electric', 'form:alolan', etc.",
+            "  Conditions are tags like 'cobblemon:pikachu', 'type:electric', 'form:alolan', etc.",
             "- 'minLevel'/'maxLevel': Restrict to Pokémon level range",
             "- 'order': Priority of the reward (lower numbers = higher priority, default 999)",
             "- 'excludedRewards': List of reward names to exclude if this reward is triggered",

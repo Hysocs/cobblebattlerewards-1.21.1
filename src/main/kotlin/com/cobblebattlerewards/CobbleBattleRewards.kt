@@ -308,7 +308,7 @@ object CobbleBattleRewards : ModInitializer {
 		trigger: String
 	): String {
 		var result = text
-		result = result.replace("% Slate", player.name.string)
+		result = result.replace("%player%", player.name.string) // Corrected from "% Slate"
 		result = result.replace("%pokemon%", state.opponentPokemon?.species?.name?.toString() ?: "")
 		result = result.replace("%level%", state.opponentPokemon?.level?.toString() ?: "")
 		result = result.replace("%battleType%", state.battleType.name.lowercase())
