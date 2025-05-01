@@ -10,7 +10,7 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 
 data class BattleRewardsConfig(
-    override val version: String = "2.0.1",
+    override val version: String = "2.0.3",
     override val configId: String = "cobblebattlerewards",
     var debugEnabled: Boolean = true,
     var inventoryFullBehavior: String = "drop", // "drop" or "skip"
@@ -33,7 +33,7 @@ data class Reward(
     var cooldown: Long = 0L, // Cooldown in seconds
     var cooldownMessage: String = "", // MiniMessage-formatted message shown when cooldown is active
     var battleTypes: List<String> = listOf("wild", "pvp", "npc"), // "wild", "pvp", "npc"
-    var conditions: List<String> = listOf(), // Required conditions (empty = all)
+    val conditions: List<Any> = emptyList(),
     var minLevel: Int = 1,
     var maxLevel: Int = 100,
     var order: Int = 999, // Lower numbers = higher priority
@@ -43,7 +43,7 @@ data class Reward(
 object BattleRewardsConfigManager {
     private val logger = LoggerFactory.getLogger("cobblebattlerewards")
     private const val MOD_ID = "cobblebattlerewards"
-    private const val CURRENT_VERSION = "2.0.1"
+    private const val CURRENT_VERSION = "2.0.3"
     private lateinit var configManager: ConfigManager<BattleRewardsConfig>
     private var isInitialized = false
 
@@ -235,7 +235,7 @@ object BattleRewardsConfigManager {
                 cooldown = 300,
                 cooldownMessage = "<red>Please wait %time% seconds before another Pikachu reward.</red>",
                 battleTypes = listOf("wild"),
-                conditions = listOf("species:pikachu"),
+                conditions = listOf("cobblemon:pikachu"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 1,
@@ -247,7 +247,7 @@ object BattleRewardsConfigManager {
                 itemStack = "{\"id\":\"minecraft:emerald\",\"count\":5,\"components\":{\"minecraft:custom_name\":\"\\\"Zapdos Reward\\\"\"}}",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("species:zapdos"),
+                conditions = listOf("cobblemon:zapdos"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 1,
@@ -306,7 +306,7 @@ object BattleRewardsConfigManager {
                 cooldown = 300,
                 cooldownMessage = "<red>Please wait %time% seconds before another Pikachu capture reward.</red>",
                 battleTypes = listOf("wild"),
-                conditions = listOf("species:pikachu"),
+                conditions = listOf("cobblemon:pikachu"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 1,
@@ -318,7 +318,7 @@ object BattleRewardsConfigManager {
                 itemStack = "{\"id\":\"minecraft:emerald\",\"count\":5,\"components\":{\"minecraft:custom_name\":\"\\\"Zapdos Capture Reward\\\"\"}}",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("species:zapdos"),
+                conditions = listOf("cobblemon:zapdos"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 1,

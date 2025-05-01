@@ -78,10 +78,21 @@ object CobbleBattleRewards : ModInitializer {
 
 	private fun rewardApplies(reward: Reward, pokemon: Pokemon?): Boolean {
 		if (pokemon == null) return false
-		if (reward.conditions.isEmpty()) return true
-		val speciesConditions = reward.conditions.map { it.substringAfter("cobblemon:").lowercase() }
-		val pokemonSpecies = pokemon.species.name.lowercase()
-		return pokemonSpecies in speciesConditions
+		if (reward.conditions.isEmpty()) return true // No conditions means the reward always applies
+
+		// Convert Pokémon properties to a set for efficient lookup
+		val (_, fullProps) = toPropertyMap(createDynamicProperties(pokemon)) // Assumes these functions exist
+
+		// Check if any condition is satisfied
+		return reward.conditions.any { condition ->
+			when (condition) {
+				is String -> condition in fullProps // Single condition check
+				is List<*> -> condition.all { subCond ->
+					subCond is String && subCond in fullProps // All sub-conditions must match
+				}
+				else -> false // Invalid condition type
+			}
+		}
 	}
 
 	private fun setupEventHandlers() {
