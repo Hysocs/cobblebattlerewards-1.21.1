@@ -39,7 +39,6 @@ object CobbleBattleRewards : ModInitializer {
 	private val scheduler = Executors.newSingleThreadScheduledExecutor()
 	private val GSON = Gson()
 
-	// Timeout for inactivity: 30 minutes
 	private val BATTLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30)
 
 	enum class BattleType { WILD, NPC, PVP }
@@ -56,7 +55,6 @@ object CobbleBattleRewards : ModInitializer {
 		var battleType: BattleType = BattleType.WILD,
 		var winningPlayers: MutableList<UUID> = Collections.synchronizedList(mutableListOf()),
 		var forfeitingActors: MutableList<UUID> = Collections.synchronizedList(mutableListOf()),
-		// Track last activity for timeout
 		var lastActivity: Long = System.currentTimeMillis()
 	)
 
@@ -76,22 +74,78 @@ object CobbleBattleRewards : ModInitializer {
 		player.sendMessage(formatted, false)
 	}
 
+	private fun checkCondition(condition: String, propertyMap: Map<String, String>): Boolean {
+		logDebug("Checking condition: $condition", MOD_ID)
+		val separatorIndex = condition.indexOfAny(charArrayOf(':', '='))
+
+		return if (separatorIndex != -1) {
+			val key = condition.substring(0, separatorIndex).trim().lowercase(Locale.getDefault())
+			val value = condition.substring(separatorIndex + 1).trim()
+
+			if (propertyMap.containsKey(key)) {
+				val pokemonValue = propertyMap[key]
+				logDebug("  Parsed key=$key, value=$value. Pokemon property '$key' value: $pokemonValue", MOD_ID)
+				if (pokemonValue != null) {
+					val result = pokemonValue.contains(value, ignoreCase = true)
+					logDebug("  Containment check result: $result ('$pokemonValue' contains '$value'?)", MOD_ID)
+					result
+				} else {
+					logDebug("  Pokemon property '$key' found but value is null.", MOD_ID)
+					false
+				}
+			} else {
+				logDebug("  Separator found but key '$key' is not a known property key. Treating as raw tag.", MOD_ID)
+				val speciesValue = propertyMap["species"]
+				logDebug("  Checking raw tag against species: '$condition' == '$speciesValue'?", MOD_ID)
+				if (speciesValue != null) {
+					val result = speciesValue.equals(condition, ignoreCase = true)
+					logDebug("  Equality check result: $result", MOD_ID)
+					result
+				} else {
+					logDebug("  Species property not found for raw tag check.", MOD_ID)
+					false
+				}
+			}
+		} else {
+			val speciesValue = propertyMap["species"]
+			logDebug("  Checking raw tag against species: '$condition' == '$speciesValue'?", MOD_ID)
+			if (speciesValue != null) {
+				val result = speciesValue.equals(condition, ignoreCase = true)
+				logDebug("  Equality check result: $result", MOD_ID)
+				result
+			} else {
+				logDebug("  Species property not found for raw tag check.", MOD_ID)
+				false
+			}
+		}
+	}
+
+
 	private fun rewardApplies(reward: Reward, pokemon: Pokemon?): Boolean {
 		if (pokemon == null) return false
-		if (reward.conditions.isEmpty()) return true // No conditions means the reward always applies
+		if (reward.conditions.isEmpty()) return true
 
-		// Convert Pokémon properties to a set for efficient lookup
-		val (_, fullProps) = toPropertyMap(createDynamicProperties(pokemon)) // Assumes these functions exist
+		val (propertyMap, fullProps) = toPropertyMap(createDynamicProperties(pokemon))
+		logDebug("Props snapshot: $fullProps", MOD_ID)
 
-		// Check if any condition is satisfied
-		return reward.conditions.any { condition ->
+		val conditionsMatch = reward.conditions.any { condition ->
 			when (condition) {
-				is String -> condition in fullProps // Single condition check
-				is List<*> -> condition.all { subCond ->
-					subCond is String && subCond in fullProps // All sub-conditions must match
+				is String -> checkCondition(condition, propertyMap)
+				is List<*> -> {
+					condition.all { subCond ->
+						if (subCond is String) {
+							checkCondition(subCond, propertyMap)
+						} else false
+					}
 				}
-				else -> false // Invalid condition type
+				else -> false
 			}
+		}
+
+		return if (reward.conditionsBlacklist) {
+			!conditionsMatch
+		} else {
+			conditionsMatch
 		}
 	}
 
@@ -184,7 +238,6 @@ object CobbleBattleRewards : ModInitializer {
 		}
 	}
 
-	// 1) PVP first, then WILD if any wild actor present, otherwise NPC or WILD
 	private fun determineBattleType(actors: Iterable<BattleActor>): BattleType {
 		val playerCount = actors.count { it.type == ActorType.PLAYER }
 		if (playerCount > 1) return BattleType.PVP
@@ -208,11 +261,9 @@ object CobbleBattleRewards : ModInitializer {
 		logDebug("==== Determining rewards for ${player.name.string} ====", MOD_ID)
 		logDebug("Trigger=$trigger, Type=$battleType, OppLvl=${state.opponentPokemon?.level}", MOD_ID)
 		state.opponentProperties?.let { props ->
-			val (_, fullProps) = toPropertyMap(props)
-			logDebug("Props snapshot: $fullProps", MOD_ID)
 		}
 
-		val rewards = getEligibleRewards(state, battleType, trigger, state.opponentPokemon?.level ?: 1)
+		val rewards = getEligibleRewards(player, state, battleType, trigger, state.opponentPokemon?.level ?: 1)
 		if (rewards.isEmpty()) {
 			logDebug("No rewards eligible for ${player.name.string}", MOD_ID)
 			return
@@ -248,9 +299,9 @@ object CobbleBattleRewards : ModInitializer {
 		}
 
 		val success = when (reward.type.lowercase()) {
-			"item"    -> giveItem(player, reward, state, trigger)
+			"item" -> giveItem(player, reward, state, trigger)
 			"command" -> executeCommand(player, reward, state, trigger)
-			else      -> {
+			else -> {
 				logDebug("Invalid reward type: ${reward.type}", MOD_ID)
 				false
 			}
@@ -319,7 +370,7 @@ object CobbleBattleRewards : ModInitializer {
 		trigger: String
 	): String {
 		var result = text
-		result = result.replace("%player%", player.name.string) // Corrected from "% Slate"
+		result = result.replace("%player%", player.name.string)
 		result = result.replace("%pokemon%", state.opponentPokemon?.species?.name?.toString() ?: "")
 		result = result.replace("%level%", state.opponentPokemon?.level?.toString() ?: "")
 		result = result.replace("%battleType%", state.battleType.name.lowercase())
@@ -327,6 +378,7 @@ object CobbleBattleRewards : ModInitializer {
 		val pos = player.blockPos
 		result = result.replace("%coords%", "${pos.x},${pos.y},${pos.z}")
 		result = result.replace("%trigger%", trigger)
+		result = result.replace("%dimension%", player.world.registryKey.value.toString())
 		return result
 	}
 
@@ -338,7 +390,6 @@ object CobbleBattleRewards : ModInitializer {
 			val playerActors = state.actors.filterIsInstance<PlayerBattleActor>()
 			val winnerIds = winners.map { it.uuid }.toSet()
 
-			// Process Winners
 			playerActors.filter { it.uuid in winnerIds }.forEach { winnerActor ->
 				val player = winnerActor.pokemonList.firstOrNull()?.effectedPokemon
 					?.getOwnerPlayer() as? ServerPlayerEntity ?: return@forEach
@@ -355,7 +406,6 @@ object CobbleBattleRewards : ModInitializer {
 				determineAndProcessReward(player, state, state.battleType, "BattleWon")
 			}
 
-			// Process Non-Winners (Losers or Forfeiters)
 			playerActors.filter { it.uuid !in winnerIds }.forEach { actor ->
 				val player = actor.pokemonList.firstOrNull()?.effectedPokemon
 					?.getOwnerPlayer() as? ServerPlayerEntity ?: return@forEach
@@ -369,7 +419,6 @@ object CobbleBattleRewards : ModInitializer {
 					state.opponentProperties = createDynamicProperties(winnerPoke)
 				}
 
-				// Check if the player has any Pokémon with health > 0
 				val hasHealthyPokemon = actor.pokemonList.any { it.effectedPokemon.currentHealth > 0 }
 				if (hasHealthyPokemon) {
 					logDebug("Granting 'BattleForfeit' to ${player.name.string}", MOD_ID)
@@ -393,6 +442,7 @@ object CobbleBattleRewards : ModInitializer {
 			?.getOwnerPlayer() as? ServerPlayerEntity
 
 	private fun getEligibleRewards(
+		player: ServerPlayerEntity,
 		state: BattleState,
 		battleType: BattleType,
 		trigger: String,
@@ -400,29 +450,28 @@ object CobbleBattleRewards : ModInitializer {
 	): List<Reward> {
 		val cfg = BattleRewardsConfigManager.config
 		val map = when (trigger) {
-			"BattleWon"     -> cfg.battleWonRewards
-			"BattleLost"    -> cfg.battleLostRewards
+			"BattleWon" -> cfg.battleWonRewards
+			"BattleLost" -> cfg.battleLostRewards
 			"BattleForfeit" -> cfg.battleForfeitRewards
-			"Captured"      -> cfg.captureRewards
-			else            -> emptyMap()
+			"Captured" -> cfg.captureRewards
+			else -> emptyMap()
 		}
 
-		// Filter rewards that match battle type, conditions, and level range
+		val playerDimension = player.world.registryKey.value.toString()
+
 		val matchingRewards = map.values.filter { r ->
-			r.battleTypes.contains(battleType.name.lowercase()) &&
+			(r.allowedDimensions.isNullOrEmpty() || playerDimension in (r.allowedDimensions ?: emptyList())) &&
+					r.battleTypes.contains(battleType.name.lowercase()) &&
 					rewardApplies(r, state.opponentPokemon) &&
 					lvl in r.minLevel..r.maxLevel
 		}
 
 		if (matchingRewards.isEmpty()) return emptyList()
 
-		// Find the minimum order among matching rewards
-		val minOrder = matchingRewards.minOf { it.order }
+		val minOrder = matchingRewards.minOfOrNull { it.order } ?: return emptyList()
 
-		// Get all rewards with that minimum order
 		val minOrderRewards = matchingRewards.filter { it.order == minOrder }
 
-		// For each of these, check the chance and collect those that pass
 		return minOrderRewards.filter { Random.nextDouble(100.0) < it.chance }
 	}
 
@@ -435,7 +484,7 @@ object CobbleBattleRewards : ModInitializer {
 			val value = when (key) {
 				"ivs" -> if (raw is IVs) raw.joinToString(",") { (k, v) -> "${k}_iv=$v" } else ""
 				"evs" -> if (raw is EVs) raw.joinToString(",") { (k, v) -> "${k}_ev=$v" } else ""
-				else  -> raw?.toString() ?: ""
+				else -> raw?.toString() ?: ""
 			}
 			map[key] = value
 			full.append("$key=$value ")
@@ -448,18 +497,17 @@ object CobbleBattleRewards : ModInitializer {
 			val m = pokemon.javaClass.getMethod("getProperties")
 			val props = m.invoke(pokemon) as? PokemonProperties
 			if (props != null && props.asString().isNotEmpty()) return props.copy()
-		} catch (_: Exception) {}
+		} catch (_: Exception) {
+		}
 		val properties = PokemonProperties()
 		PokemonPropertyExtractor.ALL.forEach { it(pokemon, properties) }
 		properties.type = pokemon.form.types.joinToString(",") { it.name }
 		return properties
 	}
 
-	// Corrected deserializeItemStack
 	private fun deserializeItemStack(jsonString: String, ops: DynamicOps<JsonElement>): ItemStack {
 		return try {
 			val elem = GSON.fromJson(jsonString, JsonElement::class.java)
-			// parse() returns DataResult<ItemStack>, so .result() is Optional<ItemStack>
 			ItemStack.CODEC
 				.parse(ops, elem)
 				.result()
@@ -470,7 +518,6 @@ object CobbleBattleRewards : ModInitializer {
 		}
 	}
 
-	// Cleans up resolved or stale (>30m) battles
 	private fun cleanupBattles() {
 		val now = System.currentTimeMillis()
 		battles.entries.removeIf { (_, state) ->

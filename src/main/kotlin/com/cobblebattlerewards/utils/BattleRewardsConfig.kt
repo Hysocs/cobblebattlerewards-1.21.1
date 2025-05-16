@@ -10,10 +10,10 @@ import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 
 data class BattleRewardsConfig(
-    override val version: String = "2.0.3",
+    override val version: String = "2.0.4",
     override val configId: String = "cobblebattlerewards",
     var debugEnabled: Boolean = true,
-    var inventoryFullBehavior: String = "drop", // "drop" or "skip"
+    var inventoryFullBehavior: String = "drop",
     @SerializedName("battleWonRewards")
     var battleWonRewards: Map<String, Reward> = mapOf(),
     @SerializedName("battleLostRewards")
@@ -25,25 +25,27 @@ data class BattleRewardsConfig(
 ) : ConfigData
 
 data class Reward(
-    var type: String, // "item" or "command"
-    var message: String = "", // MiniMessage-formatted message shown to player when reward is given
-    var command: String = "", // Used if type is "command"
-    var itemStack: String = "", // JSON-serialized ItemStack string, used if type is "item"
-    var chance: Double = 100.0, // Percentage chance (0.0 to 100.0)
-    var cooldown: Long = 0L, // Cooldown in seconds
-    var cooldownMessage: String = "", // MiniMessage-formatted message shown when cooldown is active
-    var battleTypes: List<String> = listOf("wild", "pvp", "npc"), // "wild", "pvp", "npc"
+    var type: String,
+    var message: String = "",
+    var command: String = "",
+    var itemStack: String = "",
+    var chance: Double = 100.0,
+    var cooldown: Long = 0L,
+    var cooldownMessage: String = "",
+    var battleTypes: List<String> = listOf("wild", "pvp", "npc"),
     val conditions: List<Any> = emptyList(),
+    var conditionsBlacklist: Boolean = false,
     var minLevel: Int = 1,
     var maxLevel: Int = 100,
-    var order: Int = 999, // Lower numbers = higher priority
-    var excludedRewards: List<String> = listOf() // List of reward names to exclude if this reward is triggered
+    var order: Int = 999,
+    var excludedRewards: List<String> = listOf(),
+    var allowedDimensions: List<String>? = emptyList()
 )
 
 object BattleRewardsConfigManager {
     private val logger = LoggerFactory.getLogger("cobblebattlerewards")
     private const val MOD_ID = "cobblebattlerewards"
-    private const val CURRENT_VERSION = "2.0.3"
+    private const val CURRENT_VERSION = "2.0.4"
     private lateinit var configManager: ConfigManager<BattleRewardsConfig>
     private var isInitialized = false
 
@@ -76,10 +78,17 @@ object BattleRewardsConfigManager {
             "",
             "REWARD FILTERS:",
             "- 'conditions': Restrict to Pokémon with specific conditions (empty = all)",
+            "- 'conditionsBlacklist': If true, the conditions act as a blacklist (reward is given if conditions are *not* met).",
             "  Conditions are tags like 'cobblemon:pikachu', 'type:electric', 'form:alolan', etc.",
             "- 'minLevel'/'maxLevel': Restrict to Pokémon level range",
             "- 'order': Priority of the reward (lower numbers = higher priority, default 999)",
             "- 'excludedRewards': List of reward names to exclude if this reward is triggered",
+            "- 'allowedDimensions': List of dimension IDs (e.g., [\"minecraft:overworld\", \"minecraft:the_nether\"]).",
+            "  If empty or not present, the reward is allowed in all dimensions. Example dimension IDs:",
+            "    - Overworld: \"minecraft:overworld\"",
+            "    - The Nether: \"minecraft:the_nether\"",
+            "    - The End: \"minecraft:the_end\"",
+            "    - Custom dimensions usually follow 'modid:dimension_name' format.",
             "",
             "PLACEHOLDERS (usable in message & command strings):",
             "- '%player%': the player's name",
@@ -194,7 +203,8 @@ object BattleRewardsConfigManager {
                 battleTypes = listOf("wild", "npc", "pvp"),
                 minLevel = 1,
                 maxLevel = 100,
-                order = 999
+                order = 999,
+                allowedDimensions = listOf("minecraft:overworld")
             ),
             "money_50" to Reward(
                 type = "command",
@@ -274,6 +284,18 @@ object BattleRewardsConfigManager {
                 minLevel = 1,
                 maxLevel = 100,
                 order = 3
+            ),
+            "no_common_reward" to Reward(
+                type = "item",
+                message = "<gray>You won a battle and didn't get a common item!</gray>",
+                itemStack = "{\"id\":\"minecraft:stick\",\"count\":1}",
+                chance = 10.0,
+                battleTypes = listOf("wild"),
+                conditions = listOf("cobblemon:pidgey", "cobblemon:rattata", "cobblemon:zubat"),
+                conditionsBlacklist = true,
+                minLevel = 1,
+                maxLevel = 100,
+                order = 999
             )
         ),
         captureRewards = mapOf(
