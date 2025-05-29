@@ -1,5 +1,6 @@
 package com.cobblebattlerewards
 
+import com.cobblebattlerewards.CobbleBattleRewards.BattleState
 import com.cobblebattlerewards.utils.BattleRewardsCommands
 import com.cobblebattlerewards.utils.BattleRewardsConfigManager
 import com.cobblebattlerewards.utils.Reward
@@ -41,7 +42,7 @@ object CobbleBattleRewards : ModInitializer {
 
 	private val BATTLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30)
 
-	enum class BattleType { WILD, NPC, PVP }
+	enum class BattleType { ROAM, WILD, NPC, PVP }
 
 	data class BattleState(
 		var actors: List<BattleActor> = emptyList(),
@@ -183,20 +184,28 @@ object CobbleBattleRewards : ModInitializer {
 			}
 
 			POKEMON_CAPTURED.subscribe { event ->
-				findBattleByPokemon(event.pokemon)?.let { battleId ->
-					battles[battleId]?.apply {
-						logDebug("Pokémon captured in battle $battleId", MOD_ID)
-						if (opponentPokemon?.uuid != event.pokemon.uuid) {
-							opponentPokemon = event.pokemon
-							opponentProperties = createDynamicProperties(event.pokemon)
-						}
-						isCaptured = true
-						findPlayerFromBattle(this)?.let { player ->
-							logDebug("Granting 'Captured' rewards to player: ${player.name.string}", MOD_ID)
-							determineAndProcessReward(player, this, battleType, "Captured")
-						}
-						isResolved = true
+				val battleId = findBattleByPokemon(event.pokemon);
+
+				if (battleId != null && battles[battleId] != null) {
+					val battle = battles[battleId]!!
+
+					logDebug("Pokémon captured in battle $battleId", MOD_ID)
+					if (battle.opponentPokemon?.uuid != event.pokemon.uuid) {
+						battle.opponentPokemon = event.pokemon
+						battle.opponentProperties = createDynamicProperties(event.pokemon)
 					}
+					battle.isCaptured = true
+					findPlayerFromBattle(battle)?.let { player ->
+						logDebug("Granting 'Captured' rewards to player: ${player.name.string}", MOD_ID)
+						determineAndProcessReward(player, battle, battle.battleType, "Captured")
+					}
+					battle.isResolved = true
+				} else {
+					logDebug("Granting 'Captured' rewards to player: ${event.player.name.string}", MOD_ID)
+					val state = BattleState()
+					state.opponentPokemon = event.pokemon
+					state.opponentProperties = createDynamicProperties(event.pokemon)
+					determineAndProcessReward(event.player, state, BattleType.ROAM, "Captured")
 				}
 			}
 
