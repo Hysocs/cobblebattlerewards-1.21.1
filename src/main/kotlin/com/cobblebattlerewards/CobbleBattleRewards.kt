@@ -4,6 +4,7 @@ import com.cobblebattlerewards.CobbleBattleRewards.BattleState
 import com.cobblebattlerewards.utils.BattleRewardsCommands
 import com.cobblebattlerewards.utils.BattleRewardsConfigManager
 import com.cobblebattlerewards.utils.Reward
+import com.cobblebattlerewards.utils.WeightedItem
 import com.everlastingutils.utils.logDebug
 import com.cobblemon.mod.common.api.battles.model.actor.BattleActor
 import com.cobblemon.mod.common.api.battles.model.actor.ActorType
@@ -301,6 +302,7 @@ object CobbleBattleRewards : ModInitializer {
 				player,
 				state,
 				reward,
+				ItemStack.EMPTY,
 				trigger
 			)
 			sendMinimessage(player, cdMsg)
@@ -331,13 +333,14 @@ object CobbleBattleRewards : ModInitializer {
 			return false
 		}
 		return try {
-			val stack = deserializeItemStack(reward.itemStack, JsonOps.INSTANCE)
+			val stack = deserializeItemStack(getRandomItem(reward.itemStack), JsonOps.INSTANCE)
+			val copy = stack.copy()
 			val inserted = player.inventory.insertStack(stack)
 			if (!inserted && BattleRewardsConfigManager.config.inventoryFullBehavior == "drop") {
 				player.dropItem(stack, false, false)
 			}
 			if (reward.message.isNotEmpty()) {
-				val msg = applyPlaceholders(reward.message, player, state, reward, trigger)
+				val msg = applyPlaceholders(reward.message, player, state, reward, copy, trigger)
 				sendMinimessage(player, msg)
 			}
 			inserted || BattleRewardsConfigManager.config.inventoryFullBehavior == "drop"
@@ -358,10 +361,10 @@ object CobbleBattleRewards : ModInitializer {
 				logDebug("Empty command for ${player.name.string}", MOD_ID)
 				return false
 			}
-			val cmd = applyPlaceholders(reward.command, player, state, reward, trigger)
+			val cmd = applyPlaceholders(reward.command, player, state, reward, ItemStack.EMPTY, trigger)
 			player.server.commandManager.dispatcher.execute(cmd, player.server.commandSource)
 			if (reward.message.isNotEmpty()) {
-				val msg = applyPlaceholders(reward.message, player, state, reward, trigger)
+				val msg = applyPlaceholders(reward.message, player, state, reward, ItemStack.EMPTY, trigger)
 				sendMinimessage(player, msg)
 			}
 			true
@@ -376,6 +379,7 @@ object CobbleBattleRewards : ModInitializer {
 		player: ServerPlayerEntity,
 		state: BattleState,
 		reward: Reward,
+		stack: ItemStack,
 		trigger: String
 	): String {
 		var result = text
@@ -388,6 +392,7 @@ object CobbleBattleRewards : ModInitializer {
 		result = result.replace("%coords%", "${pos.x},${pos.y},${pos.z}")
 		result = result.replace("%trigger%", trigger)
 		result = result.replace("%dimension%", player.world.registryKey.value.toString())
+		result = result.replace("%rewardItemCount%", stack.count.toString())
 		return result
 	}
 
@@ -512,6 +517,22 @@ object CobbleBattleRewards : ModInitializer {
 		PokemonPropertyExtractor.ALL.forEach { it(pokemon, properties) }
 		properties.type = pokemon.form.types.joinToString(",") { it.name }
 		return properties
+	}
+
+	private fun getRandomItem(items: List<WeightedItem>): String {
+		val totalWeight = items.sumOf { it.weight }
+		if (totalWeight <= 0) return ""
+		val random = (1..totalWeight).random()
+		var weight = 0
+
+		for (item in items) {
+			weight += item.weight
+			if (random <= weight) {
+				return item.value
+			}
+		}
+
+		return ""
 	}
 
 	private fun deserializeItemStack(jsonString: String, ops: DynamicOps<JsonElement>): ItemStack {
