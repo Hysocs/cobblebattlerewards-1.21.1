@@ -24,11 +24,16 @@ data class BattleRewardsConfig(
     var captureRewards: Map<String, Reward> = mapOf()
 ) : ConfigData
 
+data class WeightedItem(
+    var value: String,
+    var weight: Int
+)
+
 data class Reward(
     var type: String,
     var message: String = "",
     var command: String = "",
-    var itemStack: String = "",
+    var itemStack: List<WeightedItem> = emptyList(),
     var chance: Double = 100.0,
     var cooldown: Long = 0L,
     var cooldownMessage: String = "",
@@ -219,7 +224,7 @@ object BattleRewardsConfigManager {
             "pokeballs" to Reward(
                 type = "item",
                 message = "<aqua>You received 3 Poké Balls at %coords%!</aqua>",
-                itemStack = "{\"id\":\"cobblemon:poke_ball\",\"count\":3,\"components\":{\"minecraft:custom_name\":\"\\\"Battle Reward Poké Ball\\\"\"}}",
+                itemStack = listOf(WeightedItem("{\"id\":\"cobblemon:poke_ball\",\"count\":3,\"components\":{\"minecraft:custom_name\":\"\\\"Battle Reward Poké Ball\\\"\"}}", 1)),
                 chance = 100.0,
                 battleTypes = listOf("wild"),
                 minLevel = 1,
@@ -240,7 +245,7 @@ object BattleRewardsConfigManager {
             "pikachu_reward" to Reward(
                 type = "item",
                 message = "<yellow>You found a Pikachu reward after beating %pokemon% (lvl %level%)!</yellow>",
-                itemStack = "{\"id\":\"minecraft:gold_ingot\",\"count\":3,\"components\":{\"minecraft:custom_name\":\"\\\"Pikachu Reward\\\"\"}}",
+                itemStack = listOf(WeightedItem("{\"id\":\"minecraft:gold_ingot\",\"count\":3,\"components\":{\"minecraft:custom_name\":\"\\\"Pikachu Reward\\\"\"}}", 1)),
                 chance = 100.0,
                 cooldown = 300,
                 cooldownMessage = "<red>Please wait %time% seconds before another Pikachu reward.</red>",
@@ -254,7 +259,7 @@ object BattleRewardsConfigManager {
             "zapdos_reward" to Reward(
                 type = "item",
                 message = "<light_purple>You defeated Zapdos and received a legendary reward!</light_purple>",
-                itemStack = "{\"id\":\"minecraft:emerald\",\"count\":5,\"components\":{\"minecraft:custom_name\":\"\\\"Zapdos Reward\\\"\"}}",
+                itemStack = listOf(WeightedItem("{\"id\":\"minecraft:emerald\",\"count\":5,\"components\":{\"minecraft:custom_name\":\"\\\"Zapdos Reward\\\"\"}}", 1)),
                 chance = 100.0,
                 battleTypes = listOf("wild"),
                 conditions = listOf("cobblemon:zapdos"),
@@ -288,7 +293,7 @@ object BattleRewardsConfigManager {
             "no_common_reward" to Reward(
                 type = "item",
                 message = "<gray>You won a battle and didn't get a common item!</gray>",
-                itemStack = "{\"id\":\"minecraft:stick\",\"count\":1}",
+                itemStack = listOf(WeightedItem("{\"id\":\"minecraft:stick\",\"count\":1}", 1)),
                 chance = 10.0,
                 battleTypes = listOf("wild"),
                 conditions = listOf("cobblemon:pidgey", "cobblemon:rattata", "cobblemon:zubat"),
@@ -323,7 +328,7 @@ object BattleRewardsConfigManager {
             "pikachu_capture_reward" to Reward(
                 type = "item",
                 message = "<yellow>You got a Pikachu capture reward!</yellow>",
-                itemStack = "{\"id\":\"minecraft:gold_ingot\",\"count\":3,\"components\":{\"minecraft:custom_name\":\"\\\"Pikachu Reward\\\"\"}}",
+                itemStack = listOf(WeightedItem("{\"id\":\"minecraft:gold_ingot\",\"count\":3,\"components\":{\"minecraft:custom_name\":\"\\\"Pikachu Reward\\\"\"}}", 1)),
                 chance = 100.0,
                 cooldown = 300,
                 cooldownMessage = "<red>Please wait %time% seconds before another Pikachu capture reward.</red>",
@@ -337,7 +342,7 @@ object BattleRewardsConfigManager {
             "zapdos_capture_reward" to Reward(
                 type = "item",
                 message = "<light_purple>You captured the mighty Zapdos! Enjoy your legendary reward.</light_purple>",
-                itemStack = "{\"id\":\"minecraft:emerald\",\"count\":5,\"components\":{\"minecraft:custom_name\":\"\\\"Zapdos Capture Reward\\\"\"}}",
+                itemStack = listOf(WeightedItem("\"{\\\"id\\\":\\\"minecraft:emerald\\\",\\\"count\\\":5,\\\"components\\\":{\\\"minecraft:custom_name\\\":\\\"\\\\\\\"Zapdos Capture Reward\\\\\\\"\\\"}}\"", 1)),
                 chance = 100.0,
                 battleTypes = listOf("wild"),
                 conditions = listOf("cobblemon:zapdos"),
