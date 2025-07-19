@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.random.Random
+import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
 
 object CobbleBattleRewards : ModInitializer {
@@ -36,10 +37,15 @@ object CobbleBattleRewards : ModInitializer {
 	private const val MOD_ID = "cobblebattlerewards"
 	private val battles = ConcurrentHashMap<UUID, BattleState>()
 	private val cooldowns = ConcurrentHashMap<UUID, MutableMap<String, Long>>()
+	private val pokemonUuidToBattleId = ConcurrentHashMap<UUID, UUID>()
 	private val scheduler = Executors.newSingleThreadScheduledExecutor()
 	private val GSON = Gson()
 
 	private val BATTLE_TIMEOUT_MS = TimeUnit.MINUTES.toMillis(30)
+
+	private var debugLogging = false
+
+	private val PROPERTY_KEYS: List<KProperty1<PokemonProperties, Any?>> = PokemonProperties::class.memberProperties.toList()
 
 	enum class BattleType { WILD, NPC, PVP }
 
@@ -59,13 +65,13 @@ object CobbleBattleRewards : ModInitializer {
 	)
 
 	override fun onInitialize() {
-		logDebug("CobbleBattleRewards: Initializing...", MOD_ID)
+		if (debugLogging) logDebug("CobbleBattleRewards: Initializing...", MOD_ID)
 		BattleRewardsConfigManager.initializeAndLoad()
 		setupEventHandlers()
 		BattleRewardsCommands.registerCommands()
 		scheduler.scheduleAtFixedRate({ cleanupBattles() }, 1, 1, TimeUnit.SECONDS)
 		ServerLifecycleEvents.SERVER_STOPPED.register { scheduler.shutdown() }
-		logDebug("CobbleBattleRewards: Ready", MOD_ID)
+		if (debugLogging) logDebug("CobbleBattleRewards: Ready", MOD_ID)
 	}
 
 	private fun sendMinimessage(player: ServerPlayerEntity, message: String) {
@@ -75,7 +81,7 @@ object CobbleBattleRewards : ModInitializer {
 	}
 
 	private fun checkCondition(condition: String, propertyMap: Map<String, String>): Boolean {
-		logDebug("Checking condition: $condition", MOD_ID)
+		if (debugLogging) logDebug("Checking condition: $condition", MOD_ID)
 		val separatorIndex = condition.indexOfAny(charArrayOf(':', '='))
 
 		return if (separatorIndex != -1) {
@@ -84,49 +90,48 @@ object CobbleBattleRewards : ModInitializer {
 
 			if (propertyMap.containsKey(key)) {
 				val pokemonValue = propertyMap[key]
-				logDebug("  Parsed key=$key, value=$value. Pokemon property '$key' value: $pokemonValue", MOD_ID)
+				if (debugLogging) logDebug("  Parsed key=$key, value=$value. Pokemon property '$key' value: $pokemonValue", MOD_ID)
 				if (pokemonValue != null) {
 					val result = pokemonValue.contains(value, ignoreCase = true)
-					logDebug("  Containment check result: $result ('$pokemonValue' contains '$value'?)", MOD_ID)
+					if (debugLogging) logDebug("  Containment check result: $result ('$pokemonValue' contains '$value'?)", MOD_ID)
 					result
 				} else {
-					logDebug("  Pokemon property '$key' found but value is null.", MOD_ID)
+					if (debugLogging) logDebug("  Pokemon property '$key' found but value is null.", MOD_ID)
 					false
 				}
 			} else {
-				logDebug("  Separator found but key '$key' is not a known property key. Treating as raw tag.", MOD_ID)
+				if (debugLogging) logDebug("  Separator found but key '$key' is not a known property key. Treating as raw tag.", MOD_ID)
 				val speciesValue = propertyMap["species"]
-				logDebug("  Checking raw tag against species: '$condition' == '$speciesValue'?", MOD_ID)
+				if (debugLogging) logDebug("  Checking raw tag against species: '$condition' == '$speciesValue'?", MOD_ID)
 				if (speciesValue != null) {
 					val result = speciesValue.equals(condition, ignoreCase = true)
-					logDebug("  Equality check result: $result", MOD_ID)
+					if (debugLogging) logDebug("  Equality check result: $result", MOD_ID)
 					result
 				} else {
-					logDebug("  Species property not found for raw tag check.", MOD_ID)
+					if (debugLogging) logDebug("  Species property not found for raw tag check.", MOD_ID)
 					false
 				}
 			}
 		} else {
 			val speciesValue = propertyMap["species"]
-			logDebug("  Checking raw tag against species: '$condition' == '$speciesValue'?", MOD_ID)
+			if (debugLogging) logDebug("  Checking raw tag against species: '$condition' == '$speciesValue'?", MOD_ID)
 			if (speciesValue != null) {
 				val result = speciesValue.equals(condition, ignoreCase = true)
-				logDebug("  Equality check result: $result", MOD_ID)
+				if (debugLogging) logDebug("  Equality check result: $result", MOD_ID)
 				result
 			} else {
-				logDebug("  Species property not found for raw tag check.", MOD_ID)
+				if (debugLogging) logDebug("  Species property not found for raw tag check.", MOD_ID)
 				false
 			}
 		}
 	}
-
 
 	private fun rewardApplies(reward: Reward, pokemon: Pokemon?): Boolean {
 		if (pokemon == null) return false
 		if (reward.conditions.isEmpty()) return true
 
 		val (propertyMap, fullProps) = toPropertyMap(createDynamicProperties(pokemon))
-		logDebug("Props snapshot: $fullProps", MOD_ID)
+		if (debugLogging) logDebug("Props snapshot: $fullProps", MOD_ID)
 
 		val conditionsMatch = reward.conditions.any { condition ->
 			when (condition) {
@@ -171,13 +176,21 @@ object CobbleBattleRewards : ModInitializer {
 				battles[event.battle.battleId]?.let { state ->
 					state.actors = event.battle.actors.toList()
 					state.battleType = determineBattleType(event.battle.actors)
-					logDebug("Battle ${event.battle.battleId} started: ${state.battleType} Battle", MOD_ID)
+					if (debugLogging) logDebug("Battle ${event.battle.battleId} started: ${state.battleType} Battle", MOD_ID)
 					updateBattlePokemon(event.battle.battleId)
+					// Add Pokémon mappings
+					state.actors.forEach { actor ->
+						actor.pokemonList.forEach { pkmn ->
+							pokemonUuidToBattleId[pkmn.effectedPokemon.uuid] = event.battle.battleId
+						}
+					}
 				}
 			}
 
 			POKEMON_SENT_POST.subscribe { event ->
 				findBattleByPokemon(event.pokemon)?.let { battleId ->
+					// Add mapping for the new Pokémon
+					pokemonUuidToBattleId[event.pokemon.uuid] = battleId
 					updateBattlePokemon(battleId, event.pokemon)
 				}
 			}
@@ -185,17 +198,20 @@ object CobbleBattleRewards : ModInitializer {
 			POKEMON_CAPTURED.subscribe { event ->
 				findBattleByPokemon(event.pokemon)?.let { battleId ->
 					battles[battleId]?.apply {
-						logDebug("Pokémon captured in battle $battleId", MOD_ID)
+						if (debugLogging) logDebug("Pokémon captured in battle $battleId", MOD_ID)
 						if (opponentPokemon?.uuid != event.pokemon.uuid) {
 							opponentPokemon = event.pokemon
 							opponentProperties = createDynamicProperties(event.pokemon)
 						}
 						isCaptured = true
 						findPlayerFromBattle(this)?.let { player ->
-							logDebug("Granting 'Captured' rewards to player: ${player.name.string}", MOD_ID)
+							if (debugLogging) logDebug("Granting 'Captured' rewards to player: ${player.name.string}", MOD_ID)
 							determineAndProcessReward(player, this, battleType, "Captured")
 						}
 						isResolved = true
+						// Cleanup mappings and remove battle
+						removePokemonMappings(this)
+						battles.remove(battleId)
 					}
 				}
 			}
@@ -216,20 +232,22 @@ object CobbleBattleRewards : ModInitializer {
 						val player = actor.pokemonList.firstOrNull()?.effectedPokemon?.getOwnerPlayer()
 								as? ServerPlayerEntity ?: return@forEach
 						if (actor.uuid == fleeingPlayer.uuid) {
-							logDebug("Granting 'BattleForfeit' to ${player.name.string}", MOD_ID)
+							if (debugLogging) logDebug("Granting 'BattleForfeit' to ${player.name.string}", MOD_ID)
 							determineAndProcessReward(player, state, state.battleType, "BattleForfeit")
 						} else if (state.battleType == BattleType.PVP) {
-							logDebug("Granting 'BattleWon' to ${player.name.string} (opponent fled)", MOD_ID)
+							if (debugLogging) logDebug("Granting 'BattleWon' to ${player.name.string} (opponent fled)", MOD_ID)
 							determineAndProcessReward(player, state, state.battleType, "BattleWon")
 						}
 					}
+					// Cleanup mappings and remove battle
+					removePokemonMappings(state)
 					battles.remove(event.battle.battleId)
 				}
 			}
 
 			BATTLE_FAINTED.subscribe { event ->
 				battles[event.battle.battleId]?.let { state ->
-					logDebug(
+					if (debugLogging) logDebug(
 						"Pokémon fainted in battle ${event.battle.battleId}: ${event.killed.effectedPokemon.species.name}",
 						MOD_ID
 					)
@@ -258,18 +276,18 @@ object CobbleBattleRewards : ModInitializer {
 		battleType: BattleType,
 		trigger: String
 	) {
-		logDebug("==== Determining rewards for ${player.name.string} ====", MOD_ID)
-		logDebug("Trigger=$trigger, Type=$battleType, OppLvl=${state.opponentPokemon?.level}", MOD_ID)
+		if (debugLogging) logDebug("==== Determining rewards for ${player.name.string} ====", MOD_ID)
+		if (debugLogging) logDebug("Trigger=$trigger, Type=$battleType, OppLvl=${state.opponentPokemon?.level}", MOD_ID)
 		state.opponentProperties?.let { props ->
 		}
 
 		val rewards = getEligibleRewards(player, state, battleType, trigger, state.opponentPokemon?.level ?: 1)
 		if (rewards.isEmpty()) {
-			logDebug("No rewards eligible for ${player.name.string}", MOD_ID)
+			if (debugLogging) logDebug("No rewards eligible for ${player.name.string}", MOD_ID)
 			return
 		}
 		rewards.forEach { reward ->
-			logDebug("Processing reward → type=${reward.type}, message='${reward.message}'", MOD_ID)
+			if (debugLogging) logDebug("Processing reward → type=${reward.type}, message='${reward.message}'", MOD_ID)
 			processReward(player, reward, state, trigger)
 		}
 	}
@@ -302,7 +320,7 @@ object CobbleBattleRewards : ModInitializer {
 			"item" -> giveItem(player, reward, state, trigger)
 			"command" -> executeCommand(player, reward, state, trigger)
 			else -> {
-				logDebug("Invalid reward type: ${reward.type}", MOD_ID)
+				if (debugLogging) logDebug("Invalid reward type: ${reward.type}", MOD_ID)
 				false
 			}
 		}
@@ -318,7 +336,7 @@ object CobbleBattleRewards : ModInitializer {
 		trigger: String
 	): Boolean {
 		if (reward.itemStack.isEmpty()) {
-			logDebug("No item stack defined for reward", MOD_ID)
+			if (debugLogging) logDebug("No item stack defined for reward", MOD_ID)
 			return false
 		}
 		return try {
@@ -333,7 +351,7 @@ object CobbleBattleRewards : ModInitializer {
 			}
 			inserted || BattleRewardsConfigManager.config.inventoryFullBehavior == "drop"
 		} catch (e: Exception) {
-			logDebug("Failed to give item: ${e.message}", MOD_ID)
+			if (debugLogging) logDebug("Failed to give item: ${e.message}", MOD_ID)
 			false
 		}
 	}
@@ -346,7 +364,7 @@ object CobbleBattleRewards : ModInitializer {
 	): Boolean {
 		return try {
 			if (reward.command.isBlank()) {
-				logDebug("Empty command for ${player.name.string}", MOD_ID)
+				if (debugLogging) logDebug("Empty command for ${player.name.string}", MOD_ID)
 				return false
 			}
 			val cmd = applyPlaceholders(reward.command, player, state, reward, trigger)
@@ -357,7 +375,7 @@ object CobbleBattleRewards : ModInitializer {
 			}
 			true
 		} catch (e: Exception) {
-			logDebug("Cmd failed for ${player.name.string}: ${e.message}", MOD_ID)
+			if (debugLogging) logDebug("Cmd failed for ${player.name.string}: ${e.message}", MOD_ID)
 			false
 		}
 	}
@@ -402,7 +420,7 @@ object CobbleBattleRewards : ModInitializer {
 					state.opponentPokemon = loserPoke
 					state.opponentProperties = createDynamicProperties(loserPoke)
 				}
-				logDebug("Granting 'BattleWon' to ${player.name.string}", MOD_ID)
+				if (debugLogging) logDebug("Granting 'BattleWon' to ${player.name.string}", MOD_ID)
 				determineAndProcessReward(player, state, state.battleType, "BattleWon")
 			}
 
@@ -421,15 +439,17 @@ object CobbleBattleRewards : ModInitializer {
 
 				val hasHealthyPokemon = actor.pokemonList.any { it.effectedPokemon.currentHealth > 0 }
 				if (hasHealthyPokemon) {
-					logDebug("Granting 'BattleForfeit' to ${player.name.string}", MOD_ID)
+					if (debugLogging) logDebug("Granting 'BattleForfeit' to ${player.name.string}", MOD_ID)
 					determineAndProcessReward(player, state, state.battleType, "BattleForfeit")
 				} else {
-					logDebug("Granting 'BattleLost' to ${player.name.string}", MOD_ID)
+					if (debugLogging) logDebug("Granting 'BattleLost' to ${player.name.string}", MOD_ID)
 					determineAndProcessReward(player, state, state.battleType, "BattleLost")
 				}
 			}
 
-			logDebug("Finalized ${state.battleType} Battle $battleId", MOD_ID)
+			if (debugLogging) logDebug("Finalized ${state.battleType} Battle $battleId", MOD_ID)
+			// Cleanup mappings and remove battle
+			removePokemonMappings(state)
 			battles.remove(battleId)
 		}
 	}
@@ -478,7 +498,7 @@ object CobbleBattleRewards : ModInitializer {
 	private fun toPropertyMap(properties: PokemonProperties): Pair<Map<String, String>, String> {
 		val map = mutableMapOf<String, String>()
 		val full = StringBuilder()
-		PokemonProperties::class.memberProperties.forEach { prop ->
+		PROPERTY_KEYS.forEach { prop ->
 			val key = prop.name.lowercase(Locale.getDefault())
 			val raw = prop.get(properties)
 			val value = when (key) {
@@ -513,15 +533,17 @@ object CobbleBattleRewards : ModInitializer {
 				.result()
 				.orElse(ItemStack.EMPTY)
 		} catch (e: Exception) {
-			logDebug("Failed to deserialize item stack, returning empty: ${e.message}", MOD_ID)
+			if (debugLogging) logDebug("Failed to deserialize item stack, returning empty: ${e.message}", MOD_ID)
 			ItemStack.EMPTY
 		}
 	}
 
 	private fun cleanupBattles() {
 		val now = System.currentTimeMillis()
-		battles.entries.removeIf { (_, state) ->
-			state.isResolved || (now - state.lastActivity) > BATTLE_TIMEOUT_MS
+		val toRemove = battles.filter { (_, state) -> state.isResolved || (now - state.lastActivity) > BATTLE_TIMEOUT_MS }.keys
+		toRemove.forEach { id ->
+			battles[id]?.let { removePokemonMappings(it) }
+			battles.remove(id)
 		}
 	}
 
@@ -558,9 +580,13 @@ object CobbleBattleRewards : ModInitializer {
 	}
 
 	private fun findBattleByPokemon(pokemon: Pokemon): UUID? =
-		battles.entries.firstOrNull { (_, st) ->
-			st.actors.any { actor ->
-				actor.pokemonList.any { it.effectedPokemon.uuid == pokemon.uuid }
+		pokemonUuidToBattleId[pokemon.uuid]
+
+	private fun removePokemonMappings(state: BattleState) {
+		state.actors.forEach { actor ->
+			actor.pokemonList.forEach { pkmn ->
+				pokemonUuidToBattleId.remove(pkmn.effectedPokemon.uuid)
 			}
-		}?.key
+		}
+	}
 }
