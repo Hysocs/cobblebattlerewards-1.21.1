@@ -1,5 +1,6 @@
 package com.cobblebattlerewards
 
+import com.cobblemon.mod.common.Cobblemon
 import com.cobblebattlerewards.utils.BattleRewardsCommands
 import com.cobblebattlerewards.utils.BattleRewardsConfigManager
 import com.cobblebattlerewards.utils.Reward
@@ -9,6 +10,7 @@ import com.cobblemon.mod.common.api.battles.model.actor.ActorType
 import com.cobblemon.mod.common.api.events.CobblemonEvents
 import com.cobblemon.mod.common.api.pokemon.PokemonProperties
 import com.cobblemon.mod.common.api.pokemon.PokemonPropertyExtractor
+import com.cobblemon.mod.common.api.storage.party.PlayerPartyStore
 import com.cobblemon.mod.common.battles.actor.PlayerBattleActor
 import com.cobblemon.mod.common.entity.npc.NPCEntity
 import com.cobblemon.mod.common.pokemon.Pokemon
@@ -23,6 +25,7 @@ import net.fabricmc.api.ModInitializer
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents
 import net.minecraft.item.ItemStack
 import net.minecraft.server.network.ServerPlayerEntity
+import net.minecraft.text.Text
 import org.slf4j.LoggerFactory
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
@@ -72,6 +75,34 @@ object CobbleBattleRewards : ModInitializer {
 		scheduler.scheduleAtFixedRate({ cleanupBattles() }, 1, 1, TimeUnit.SECONDS)
 		ServerLifecycleEvents.SERVER_STOPPED.register { scheduler.shutdown() }
 		if (debugLogging) logDebug("CobbleBattleRewards: Ready", MOD_ID)
+
+		// Overwrite function for listing conditions in BattleRewardsCommands
+		BattleRewardsCommands.onListConditionsCommand = { context ->
+			val plr: ServerPlayerEntity? = context.source.player
+			var fullPropString: String? = null
+			if (plr != null){
+				val party: PlayerPartyStore = Cobblemon.storage.getParty(plr)
+				val pokemon: Pokemon? = party.get(0)
+				if (pokemon != null){
+					val properties: PokemonProperties = createDynamicProperties(pokemon)
+					// Get all property names and values
+					val (_, fullProps) = toPropertyMap(properties)
+					fullPropString = fullProps
+				} else {
+					val propNames: Collection<KProperty1<PokemonProperties, Any?>> = PokemonProperties::class.memberProperties
+					val stringPropertyKeys = StringBuilder()
+					propNames.forEach { prop ->
+						val lowerkey = prop.name.lowercase(Locale.getDefault())
+						stringPropertyKeys.append("$lowerkey, ")
+					}
+					stringPropertyKeys.removeSuffix(", ")
+					fullPropString = stringPropertyKeys.toString()
+				}
+			}
+			if (fullPropString != null){
+				context.source.sendFeedback({ Text.literal("§6§lList Of Usable Conditions§r\n$fullPropString") }, false)
+			}
+    	}
 	}
 
 	private fun sendMinimessage(player: ServerPlayerEntity, message: String) {
