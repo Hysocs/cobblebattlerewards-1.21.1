@@ -26,6 +26,11 @@ object BattleRewardsCommands {
             subcommand("listrewards", permission = "cobblebattlerewards.list") {
                 executes { context -> executeListRewardsCommand(context) }
             }
+
+            // List available conditions subcommand
+            subcommand("listconditions", permission = "cobblebattlerewards.list_conditions") {
+                executes { context -> executeListConditionsCommand(context) }
+            }
         }
 
         // Register all commands
@@ -98,6 +103,13 @@ object BattleRewardsCommands {
 
         source.sendFeedback({ Text.literal(messageBuilder.toString()) }, false)
         BattleRewardsConfigManager.logDebug("Listed rewards.")
+        return 1
+    }
+
+    public var onListConditionsCommand: ((CommandContext<ServerCommandSource>) -> Unit)? = null
+
+    private fun executeListConditionsCommand(context: CommandContext<ServerCommandSource>): Int {
+        onListConditionsCommand?.invoke(context)
         return 1
     }
 }

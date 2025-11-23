@@ -79,7 +79,7 @@ object BattleRewardsConfigManager {
             "REWARD FILTERS:",
             "- 'conditions': Restrict to Pokémon with specific conditions (empty = all)",
             "- 'conditionsBlacklist': If true, the conditions act as a blacklist (reward is given if conditions are *not* met).",
-            "  Conditions are tags like 'cobblemon:pikachu', 'type:electric', 'form:alolan', etc.",
+            "  You can get a list of all usable conditions using /cobblebattlerewards list_conditions",
             "- 'minLevel'/'maxLevel': Restrict to Pokémon level range",
             "- 'order': Priority of the reward (lower numbers = higher priority, default 999)",
             "- 'excludedRewards': List of reward names to exclude if this reward is triggered",
@@ -232,7 +232,7 @@ object BattleRewardsConfigManager {
                 command = "eco deposit 100 dollars %player%",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("type:ghost"),
+                conditions = listOf("type=ghost"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 2
@@ -269,7 +269,7 @@ object BattleRewardsConfigManager {
                 command = "eco deposit 50 dollars %player%",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("type:electric"),
+                conditions = listOf("type=electric"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 2
@@ -280,7 +280,7 @@ object BattleRewardsConfigManager {
                 command = "eco deposit 25 dollars %player%",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("type:flying"),
+                conditions = listOf("type=flying"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 3
@@ -315,7 +315,7 @@ object BattleRewardsConfigManager {
                 command = "eco deposit 100 dollars %player%",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("type:ghost"),
+                conditions = listOf("type=ghost"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 2
@@ -352,7 +352,7 @@ object BattleRewardsConfigManager {
                 command = "eco deposit 50 dollars %player%",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("type:electric"),
+                conditions = listOf("type=electric"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 2
@@ -363,7 +363,7 @@ object BattleRewardsConfigManager {
                 command = "eco deposit 25 dollars %player%",
                 chance = 100.0,
                 battleTypes = listOf("wild"),
-                conditions = listOf("type:flying"),
+                conditions = listOf("type=flying"),
                 minLevel = 1,
                 maxLevel = 100,
                 order = 3
