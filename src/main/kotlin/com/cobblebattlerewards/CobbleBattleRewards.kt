@@ -17,6 +17,7 @@ import com.cobblemon.mod.common.pokemon.Pokemon
 import com.cobblemon.mod.common.pokemon.EVs
 import com.cobblemon.mod.common.pokemon.IVs
 import com.everlastingutils.colors.KyoriHelper
+import com.everlastingutils.scheduling.SchedulerManager
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.mojang.serialization.DynamicOps
@@ -34,6 +35,11 @@ import java.util.concurrent.TimeUnit
 import kotlin.random.Random
 import kotlin.reflect.KProperty1
 import kotlin.reflect.full.memberProperties
+import org.slf4j.Logger
+import net.fabricmc.loader.api.FabricLoader
+import net.fabricmc.loader.api.Version
+import net.fabricmc.loader.api.VersionParsingException
+
 
 object CobbleBattleRewards : ModInitializer {
     private val logger = LoggerFactory.getLogger("cobblebattlerewards")
@@ -66,14 +72,30 @@ object CobbleBattleRewards : ModInitializer {
         var forfeitingActors: MutableList<UUID> = Collections.synchronizedList(mutableListOf()),
         var lastActivity: Long = System.currentTimeMillis()
     )
-
+    private const val MOD_NAME = "CobbleBattleRewards"
     override fun onInitialize() {
+        val dependenciesMet = checkDependency(
+            currentModName = MOD_NAME,
+            dependencyModId = "everlastingutils",
+            requiredVersionStr = "1.1.1",
+            dependencyUrl = "https://modrinth.com/mod/e-utils",
+            logger = logger
+        )
+
+        // If the check fails, stop loading the rest of the mod
+        if (!dependenciesMet) {
+            return
+        }
         if (debugLogging) logDebug("CobbleBattleRewards: Initializing...", MOD_ID)
         BattleRewardsConfigManager.initializeAndLoad()
         setupEventHandlers()
         BattleRewardsCommands.registerCommands()
         scheduler.scheduleAtFixedRate({ cleanupBattles() }, 1, 1, TimeUnit.SECONDS)
-        ServerLifecycleEvents.SERVER_STOPPED.register { scheduler.shutdown() }
+        ServerLifecycleEvents.SERVER_STOPPING.register {
+            logDebug("Server is stopping. Shutting down all schedulers...", MOD_ID)
+            scheduler.shutdown()
+            SchedulerManager.shutdownAll()
+        }
         if (debugLogging) logDebug("CobbleBattleRewards: Ready", MOD_ID)
 
         // Overwrite function for listing conditions in BattleRewardsCommands
@@ -102,6 +124,55 @@ object CobbleBattleRewards : ModInitializer {
             if (fullPropString != null){
                 context.source.sendFeedback({ Text.literal("§6§lList Of Usable Conditions§r\n$fullPropString") }, false)
             }
+        }
+    }
+    private fun checkDependency(
+        currentModName: String,
+        dependencyModId: String,
+        requiredVersionStr: String,
+        dependencyUrl: String,
+        logger: Logger
+    ): Boolean {
+        // Attempt to get the dependency's container from the Fabric Loader
+        val modContainerOpt = FabricLoader.getInstance().getModContainer(dependencyModId)
+
+        // Check if the dependency is missing entirely
+        if (modContainerOpt.isEmpty) {
+            logger.error("************************************************************")
+            logger.error("* FATAL: $currentModName requires the mod '$dependencyModId', but it is missing.")
+            logger.error("* Please install '$dependencyModId' version $requiredVersionStr or newer.")
+            logger.error("* You can download it from: $dependencyUrl")
+            logger.error("************************************************************")
+            return false
+        }
+
+        // Get the installed version of the dependency
+        val installedVersion = modContainerOpt.get().metadata.version
+
+        try {
+            // Parse the required version string into a Version object
+            val requiredVersion = Version.parse(requiredVersionStr)
+
+            // Compare the installed version with the required version.
+            // A result less than 0 means the installed version is older.
+            if (installedVersion.compareTo(requiredVersion) < 0) {
+                logger.error("************************************************************")
+                logger.error("* FATAL: Your version of '$dependencyModId' ($installedVersion) is too old.")
+                logger.error("* $currentModName requires version $requiredVersionStr or newer.")
+                logger.error("* Please update '$dependencyModId' to prevent issues.")
+                logger.error("* You can download it from: $dependencyUrl")
+                logger.error("************************************************************")
+                return false
+            }
+
+            // If the check passes, log a success message
+            logger.info("Found compatible version of '$dependencyModId': $installedVersion")
+            return true
+
+        } catch (e: VersionParsingException) {
+            // This catch block handles errors in your own code (e.g., a typo in the version string)
+            logger.error("Could not parse required version string '$requiredVersionStr' for '$dependencyModId'. This is a bug in $currentModName.", e)
+            return false
         }
     }
 
@@ -562,15 +633,9 @@ object CobbleBattleRewards : ModInitializer {
     }
 
     private fun createDynamicProperties(pokemon: Pokemon): PokemonProperties {
-        try {
-            val m = pokemon.javaClass.getMethod("getProperties")
-            val props = m.invoke(pokemon) as? PokemonProperties
-            if (props != null && props.asString().isNotEmpty()) return props.copy()
-        } catch (_: Exception) {
-        }
         val properties = PokemonProperties()
         PokemonPropertyExtractor.ALL.forEach { it(pokemon, properties) }
-        properties.type = pokemon.form.types.joinToString(",") { it.name }
+        properties.type = pokemon.form.types.joinToString(",") { it.name.lowercase() }
         return properties
     }
 
